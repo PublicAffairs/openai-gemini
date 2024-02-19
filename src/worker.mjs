@@ -2,8 +2,8 @@ import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/ge
 import { Buffer } from "node:buffer";
 // alt: import { base64url } from "rfc4648";
 
-addEventListener("fetch", (event) => {
-  event.respondWith((async ({ request }) => {
+export default {
+  async fetch (request) {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -27,8 +27,8 @@ addEventListener("fetch", (event) => {
       return new Response(err, { status: 400 });
     }
     return handleRequest(json, apiKey);
-  })(event));
-});
+  }
+};
 
 const handleOPTIONS = async () => {
   return new Response(null, {
