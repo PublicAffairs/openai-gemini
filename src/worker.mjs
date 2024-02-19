@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
 import { Buffer } from "node:buffer";
 // alt: import { base64url } from "rfc4648";
 
@@ -40,36 +39,66 @@ const handleOPTIONS = async () => {
   });
 };
 
+const BASE_URL = "https://generativelanguage.googleapis.com";
+const API_VERSION = "v1";
+const API_CLIENT = "genai-js/0.2.1"; // https://github.com/google/generative-ai-js/blob/d9c3f4d421100b5656d63e084ca93e418d00bf07/packages/main/src/requests/request.ts#L60
 async function handleRequest(req, apiKey) {
-  const model = new GoogleGenerativeAI(apiKey)
-    .getGenerativeModel(genModelParams(req));
-  const headers = new Headers();
-  headers.set("Access-Control-Allow-Origin", "*");
-  let contents;
+  const MODEL = hasImageMessage(req.messages)
+    ? "gemini-pro-vision"
+    : "gemini-pro";
+  const TASK = req.stream ? "streamGenerateContent" : "generateContent";
+  let url = `${BASE_URL}/${API_VERSION}/models/${MODEL}:${TASK}`;
+  if (req.stream) { url += "?alt=sse"; }
+  let response;
   try {
-    contents = await transformMessages(req.messages);
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+        "x-goog-api-client": API_CLIENT,
+      },
+      body: JSON.stringify(await transformRequest(req)), // try
+    });     
   } catch (err) {
     console.error(err);
-    return new Response(err, { status: 400, headers });
-  }  
-  let options = { headers };
-  let body;
-  let id = generateChatcmplId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
-  try {
-    if (req.stream) {
-      body = await getChatResponseStream(model, contents, id);
-      headers.set("Content-Type", "text/event-stream");
-    } else {
-      body = await getChatResponse(model, contents, id);
-      headers.set("Content-Type", "application/json");
-    }
-  } catch (err) {
-    console.error(err);
-    body = err;
-    options.status = /\[(\d\d\d) /.exec(err)?.[1] ?? 500;
-    //Error: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1/models/gemini-pro:streamGenerateContent?alt=sse: [400 Bad Request] User location is not supported for the API use.
+    return new Response(err, { status: 400, headers: {"Access-Control-Allow-Origin": "*"} });
   }
-  return new Response(body, options);
+
+  let body;
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  if (response.ok) {
+    let id = generateChatcmplId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
+    if (req.stream) {
+      body = response.body
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(new TransformStream({ transform: parseStream, buffer: "" }))
+        .pipeThrough(new TransformStream({ transform: toOpenAiStream, MODEL, id, last: [] }))
+        .pipeThrough(new TextEncoderStream());
+    } else {
+      body = await response.text();
+      try {
+        body = await processResponse(JSON.parse(body).candidates, MODEL, id);
+      } catch (err) {
+        console.error(err);
+        response = { status: 500 };
+        headers.set("Content-Type", "text/plain");
+      }
+    }
+  } else {
+    // Error: [400 Bad Request] User location is not supported for the API use.
+    body = await response.text();
+    try {
+      const { code, status, message } = JSON.parse(body).error;
+      body = `Error: [${code} ${status}] ${message}`;
+    } catch (err) {
+      // pass body as is
+    }
+    headers.set("Content-Type", "text/plain");
+    //headers.delete("Transfer-Encoding");
+  }
+  return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 
 const hasImageMessage = (messages) => { // OpenAI "model": "gpt-4-vision-preview"
@@ -80,11 +109,15 @@ const hasImageMessage = (messages) => { // OpenAI "model": "gpt-4-vision-preview
   });
 };
 
-const categories = { ...HarmCategory};
-delete categories.HARM_CATEGORY_UNSPECIFIED;
-const safetySettings = Object.values(categories).map((category) => ({
+const harmCategory = [
+  "HARM_CATEGORY_HATE_SPEECH",
+  "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+  "HARM_CATEGORY_DANGEROUS_CONTENT",
+  "HARM_CATEGORY_HARASSMENT"
+];
+const safetySettings = harmCategory.map((category) => ({
   category,
-  threshold: HarmBlockThreshold.BLOCK_NONE,
+  threshold: "BLOCK_NONE",
 }));
 const fieldsMap = {
   stop: "stopSequences",
@@ -104,15 +137,6 @@ const transformConfig = (req) => {
     }
   }
   return cfg;
-};
-const genModelParams = (req) => {
-  return {
-    model: hasImageMessage(req.messages)
-      ? "gemini-pro-vision"
-      : "gemini-pro",
-    safetySettings,
-    generationConfig: transformConfig(req),
-  };
 };
 
 const parseImg = async (url) => {
@@ -182,6 +206,12 @@ const transformMessages = async (messages) => {
   return result;
 };
 
+const transformRequest = async (req) => ({
+  contents: await transformMessages(req.messages),
+  safetySettings,
+  generationConfig: transformConfig(req),
+});
+
 const generateChatcmplId = () => {
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let result = "chatcmpl-";
@@ -200,71 +230,95 @@ const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse
   "OTHER": "???"
   // :"function_call",
 };
+const transformCandidates = (key, cand) => ({
+  index: cand.index,
+  [key]: { role: "assistant", content: cand.content?.parts[0].text },
+  logprobs: null,
+  finish_reason: reasonsMap[cand.finishReason] || cand.finishReason,
+});
+const transformCandidatesMessage = transformCandidates.bind(null, "message");
+const transformCandidatesDelta = transformCandidates.bind(null, "delta");
 
-const getChatResponse = async (model, contents, id) => {
-  const { response: { candidates } } = await model.generateContent({ contents });
-  const data = {
+const processResponse = async (candidates, model, id) => {
+  return JSON.stringify({
     id,
     object: "chat.completion",
     created: Date.now(),
-    model: model.model,
-    // system_fingerprint: "fp_69829325d0",
-    choices: candidates.map((cand) => ({
-      index: cand.index,
-      message: { role: "assistant", content: cand.content.parts[0].text },
-      logprobs: null,
-      finish_reason: reasonsMap[cand.finishReason] || cand.finishReason,
-    })),
-  };
-  return JSON.stringify(data);
-};
-
-const transformResponseStream = (id, model, cand, stop, first) => {
-  const data = {
-    id,
-    object: "chat.completion.chunk",
-    created: Date.now(),
     model,
     // system_fingerprint: "fp_69829325d0",
-    choices: [{
-      index: cand.index,
-      delta: first
-        ? { role: "assistant", content: "" }
-        : stop ? {} : { content: cand.content.parts[0].text },
-      logprobs: null,
-      finish_reason: stop
-        ? reasonsMap[cand.finishReason] || cand.finishReason
-        : null,
-    }],
+    choices: candidates.map(transformCandidatesMessage),
+  });
+};
+
+const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
+async function parseStream (chunk, controller) {
+  chunk = await chunk;
+  if (!chunk) {
+    if (this.buffer) {
+      console.error("Invalid data:", this.buffer);
+      controller.enqueue(this.buffer);
+    }
+    controller.enqueue(chunk);
+    controller.terminate();
+    return;
+  }
+  this.buffer += chunk;
+  do {
+    const match = this.buffer.match(responseLineRE);
+    if (!match) { break; }
+    controller.enqueue(match[1]);
+    this.buffer = this.buffer.substring(match[0].length);
+  } while (true); // eslint-disable-line no-constant-condition
+}
+
+function transformResponseStream (cand, stop, first) {
+  const item = transformCandidatesDelta(cand);
+  if (stop) { item.delta = {}; } else { item.finish_reason = null; }
+  if (first) { item.delta.content = ""; } else { delete item.delta.role; }
+  const data = {
+    id: this.id,
+    object: "chat.completion.chunk",
+    created: Date.now(),
+    model: this.MODEL,
+    // system_fingerprint: "fp_69829325d0",
+    choices: [item],
   };
   return "data: " + JSON.stringify(data) + delimiter;
-};
+}
 const delimiter = "\n\n";
-const getChatResponseStream = async (model, contents, id) => {
-  const { stream, response } = await model.generateContentStream({ contents }); // eslint-disable-line no-unused-vars
-  return new ReadableStream({ pull: async function (controller) {
-    const transform = transformResponseStream.bind(null, id, model.model);
-    const { value, done } = await stream.next();
-    if (done) {
-      if (this.last.length > 0) {
-        for (const cand of this.last) {
-          controller.enqueue(transform(cand, "stop"));
-        }
-        controller.enqueue("data: [DONE]" + delimiter);
+async function toOpenAiStream (chunk, controller) {
+  const transform = transformResponseStream.bind(this);
+  const line = await chunk;
+  if (!line) {
+    if (this.last.length > 0) {
+      for (const cand of this.last) {
+        controller.enqueue(transform(cand, "stop"));
       }
-      controller.close();
-      return;
+      controller.enqueue("data: [DONE]" + delimiter);
+    }  
+    controller.terminate();
+    return;
+  }
+  let candidates;
+  try {
+    candidates = JSON.parse(line).candidates;
+  } catch (err) {
+    console.error(line);
+    console.error(err);    
+    const length = this.last.length || 1; // at least 1 error msg
+    candidates = Array.from({ length }, (_, index) => ({
+      finishReason: "error",
+      content: { parts: [{ text: err }] },
+      index,
+    }));    
+  }  
+  for (const cand of candidates) { // !!untested with candidateCount>1
+    if (!this.last[cand.index]) {
+      controller.enqueue(transform(cand, false, "first"));
     }
-    for (const cand of value.candidates) { // !!untested with candidateCount>1
-      if (!this.last[cand.index]) {
-        controller.enqueue(transform(cand, false, "first"));
-      }
-      this.last[cand.index] = cand;
-      if (cand.content) { // prevent empty data (e.g. when MAX_TOKENS)
-        controller.enqueue(transform(cand));
-      } else {
-        controller.enqueue(""); // to continue streaming
-      }
+    this.last[cand.index] = cand;
+    if (cand.content) {// prevent empty data (e.g. when MAX_TOKENS)
+      controller.enqueue(transform(cand));
     }
-  }, last: [], }).pipeThrough(new TextEncoderStream());
-};
+  }
+}
