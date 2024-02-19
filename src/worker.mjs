@@ -73,8 +73,16 @@ async function handleRequest(req, apiKey) {
     if (req.stream) {
       body = response.body
         .pipeThrough(new TextDecoderStream())
-        .pipeThrough(new TransformStream({ transform: parseStream, buffer: "" }))
-        .pipeThrough(new TransformStream({ transform: toOpenAiStream, MODEL, id, last: [] }))
+        .pipeThrough(new TransformStream({
+          transform: parseStream,
+          flush: parseStreamFlush,
+          buffer: "" ,
+        }))
+        .pipeThrough(new TransformStream({
+          transform: toOpenAiStream,
+          flush: toOpenAiStreamFlush,
+          MODEL, id, last: [],
+        }))
         .pipeThrough(new TextEncoderStream());
     } else {
       body = await response.text();
@@ -253,15 +261,7 @@ const processResponse = async (candidates, model, id) => {
 const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
 async function parseStream (chunk, controller) {
   chunk = await chunk;
-  if (!chunk) {
-    if (this.buffer) {
-      console.error("Invalid data:", this.buffer);
-      controller.enqueue(this.buffer);
-    }
-    controller.enqueue(chunk);
-    controller.terminate();
-    return;
-  }
+  if (!chunk) { return; }
   this.buffer += chunk;
   do {
     const match = this.buffer.match(responseLineRE);
@@ -269,6 +269,12 @@ async function parseStream (chunk, controller) {
     controller.enqueue(match[1]);
     this.buffer = this.buffer.substring(match[0].length);
   } while (true); // eslint-disable-line no-constant-condition
+}
+async function parseStreamFlush (controller) {
+  if (this.buffer) {
+    console.error("Invalid data:", this.buffer);
+    controller.enqueue(this.buffer);
+  }
 }
 
 function transformResponseStream (cand, stop, first) {
@@ -289,16 +295,7 @@ const delimiter = "\n\n";
 async function toOpenAiStream (chunk, controller) {
   const transform = transformResponseStream.bind(this);
   const line = await chunk;
-  if (!line) {
-    if (this.last.length > 0) {
-      for (const cand of this.last) {
-        controller.enqueue(transform(cand, "stop"));
-      }
-      controller.enqueue("data: [DONE]" + delimiter);
-    }  
-    controller.terminate();
-    return;
-  }
+  if (!line) { return; }
   let candidates;
   try {
     candidates = JSON.parse(line).candidates;
@@ -321,4 +318,13 @@ async function toOpenAiStream (chunk, controller) {
       controller.enqueue(transform(cand));
     }
   }
+}
+async function toOpenAiStreamFlush (controller) {
+  const transform = transformResponseStream.bind(this);
+  if (this.last.length > 0) {
+    for (const cand of this.last) {
+      controller.enqueue(transform(cand, "stop"));
+    }
+    controller.enqueue("data: [DONE]" + delimiter);
+  }  
 }
