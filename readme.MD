@@ -52,7 +52,7 @@ which is necessary for continuous integration (CI).
 ### Deploy to Cloudflare
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/PublicAffairs/openai-gemini)
-- Alternatively can be deployed manually pasting content of [`src/worker.mjs`](src/worker.mjs)
+- Alternatively can be deployed manually pasting content of [`src/worker.mjs`](../resize-images/src/worker.mjs)
   to https://workers.cloudflare.com/playground (see there `Deploy` button).
 - Alternatively can be deployed with [cli](https://developers.cloudflare.com/workers/wrangler/):
   `wrangler deploy`
