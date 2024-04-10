@@ -41,7 +41,8 @@ const handleOPTIONS = async () => {
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1";
-const API_CLIENT = "genai-js/0.2.1"; // https://github.com/google/generative-ai-js/blob/d9c3f4d421100b5656d63e084ca93e418d00bf07/packages/main/src/requests/request.ts#L60
+// https://github.com/google/generative-ai-js/blob/0931d2ce051215db72785d76fe3ae4e0bc3b5475/packages/main/src/requests/request.ts#L67
+const API_CLIENT = "genai-js/0.5.0"; // npm view @google/generative-ai version
 async function handleRequest(req, apiKey) {
   const MODEL = hasImageMessage(req.messages)
     ? "gemini-pro-vision"
@@ -178,7 +179,7 @@ const transformMsg = async ({ role, content }) => {
     // system, user: string
     // assistant: string or null (Required unless tool_calls is specified.)
     parts.push({ text: content });
-    return [{ role, parts }];
+    return { role, parts };
   }
   // user:
   // An array of content parts with a defined type, each can be of type text or image_url when passing in images.
@@ -196,22 +197,22 @@ const transformMsg = async ({ role, content }) => {
       throw TypeError(`Unknown "content" item type: "${item.type}"`);
     }
   }
-  return [{ role, parts }];
+  return { role, parts };
 };
 
 const transformMessages = async (messages) => {
-  const result = [];
+  const contents = [];
   let lastRole;
   for (const item of messages) {
     item.role = item.role === "assistant" ? "model" : "user";
     if (item.role === "user" && lastRole === "user") {
-      result.push([{ role: "model", parts: [{ text: "" }] }]);
+      contents.push({ role: "model", parts: { text: "" } });
     }
     lastRole = item.role;
-    result.push(await transformMsg(item));
+    contents.push(await transformMsg(item));
   }
-  //console.info(JSON.stringify(result, 2));
-  return result;
+  //console.info(JSON.stringify(contents, 2));
+  return contents;
 };
 
 const transformRequest = async (req) => ({
@@ -235,7 +236,7 @@ const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse
   "MAX_TOKENS": "length",
   "SAFETY": "content_filter",
   "RECITATION": "content_filter",
-  "OTHER": "???"
+  //"OTHER": "OTHER",
   // :"function_call",
 };
 const transformCandidates = (key, cand) => ({

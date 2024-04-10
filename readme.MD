@@ -117,8 +117,7 @@ set OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
   - [ ] `seed`
   - [x] `stop`: string|array (`stopSequences` [1,5])
   - [x] stream
-  - [x] `temperature` (0.0..1.0)
-      - [ ] <0, >1..2
+  - [x] `temperature` (0.0..2.0 for OpenAI, but Gemini supports up to infinity)
   - [x] `top_p`
   - [ ] `tools` (v1beta)
   - [ ] `tool_choice` (v1beta)
