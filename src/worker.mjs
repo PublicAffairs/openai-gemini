@@ -135,6 +135,9 @@ const transformConfig = (req) => {
       cfg[matchedKey] = req[key];
     }
   }
+  if (req.response_format?.type === "json_object") {
+    cfg.response_mime_type = "application/json";
+  }
   return cfg;
 };
 

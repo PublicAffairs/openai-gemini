@@ -113,7 +113,7 @@ set OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
   - [x] `max_tokens`
   - [x] `n` (`candidateCount` <8) _n.b.: atm api does not accept >1_
   - [ ] `presence_penalty`
-  - [ ] `response_format`
+  - [x] `response_format`
   - [ ] `seed`
   - [x] `stop`: string|array (`stopSequences` [1,5])
   - [x] stream
