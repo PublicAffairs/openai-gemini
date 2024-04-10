@@ -193,8 +193,14 @@ const transformMsg = async ({ role, content }) => {
 
 const transformMessages = async (messages) => {
   const contents = [];
+  let system_instruction;
   let lastRole;
   for (const item of messages) {
+    if (item.role === "system") {
+      delete item.role;
+      system_instruction = await transformMsg(item);
+      continue;
+    }
     item.role = item.role === "assistant" ? "model" : "user";
     if (item.role === "user" && lastRole === "user") {
       contents.push({ role: "model", parts: { text: "" } });
@@ -202,12 +208,15 @@ const transformMessages = async (messages) => {
     lastRole = item.role;
     contents.push(await transformMsg(item));
   }
+  if (system_instruction && contents.length === 0) {
+    contents.push({ role: "user", parts: { text: "" } });
+  }
   //console.info(JSON.stringify(contents, 2));
-  return contents;
+  return { system_instruction, contents };
 };
 
 const transformRequest = async (req) => ({
-  contents: await transformMessages(req.messages),
+  ...await transformMessages(req.messages),
   safetySettings,
   generationConfig: transformConfig(req),
 });

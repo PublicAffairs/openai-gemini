@@ -99,7 +99,7 @@ set OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
   - [x] `messages`
       - [x] `content`
       - [x] `role`
-          - [x] `system` (=>`user`)
+          - [x] `system` (=>`system_instruction`)
           - [x] `user`
           - [x] `assistant`
           - [ ] `tool` (v1beta)
