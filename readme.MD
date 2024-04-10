@@ -105,7 +105,7 @@ set OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
           - [ ] `tool` (v1beta)
       - [ ] `name`
       - [ ] `tool_calls`
-  - [x] `model` _(value ignored, autoselect "gemini-pro", or "-vision" for "gpt-4-vision-preview" request)_
+  - [x] `model` _(value ignored, model is set to `gemini-1.5-pro-latest`)_
   - [ ] `frequency_penalty`
   - [ ] `logit_bias`
   - [ ] `logprobs`

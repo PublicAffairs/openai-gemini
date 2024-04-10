@@ -40,13 +40,11 @@ const handleOPTIONS = async () => {
 };
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
-const API_VERSION = "v1";
+const API_VERSION = "v1beta";
 // https://github.com/google/generative-ai-js/blob/0931d2ce051215db72785d76fe3ae4e0bc3b5475/packages/main/src/requests/request.ts#L67
 const API_CLIENT = "genai-js/0.5.0"; // npm view @google/generative-ai version
 async function handleRequest(req, apiKey) {
-  const MODEL = hasImageMessage(req.messages)
-    ? "gemini-pro-vision"
-    : "gemini-pro";
+  const MODEL = "gemini-1.5-pro-latest";
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${MODEL}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
@@ -109,14 +107,6 @@ async function handleRequest(req, apiKey) {
   }
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
-
-const hasImageMessage = (messages) => { // OpenAI "model": "gpt-4-vision-preview"
-  return messages.some(({ content }) => {
-    return Array.isArray(content)
-      ? content.some((it) => it.type === "image_url")
-      : false;
-  });
-};
 
 const harmCategory = [
   "HARM_CATEGORY_HATE_SPEECH",
@@ -181,6 +171,7 @@ const transformMsg = async ({ role, content }) => {
     parts.push({ text: content });
     return { role, parts };
   }
+  // OpenAI "model": "gpt-4-vision-preview"
   // user:
   // An array of content parts with a defined type, each can be of type text or image_url when passing in images.
   // You can pass multiple images by adding multiple image_url content parts.
