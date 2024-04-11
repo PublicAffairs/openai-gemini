@@ -255,7 +255,7 @@ const processResponse = async (candidates, model, id) => {
   return JSON.stringify({
     id,
     object: "chat.completion",
-    created: Date.now(),
+    created: Math.floor(Date.now()/1000),
     model,
     // system_fingerprint: "fp_69829325d0",
     choices: candidates.map(transformCandidatesMessage),
@@ -288,7 +288,7 @@ function transformResponseStream (cand, stop, first) {
   const data = {
     id: this.id,
     object: "chat.completion.chunk",
-    created: Date.now(),
+    created: Math.floor(Date.now()/1000),
     model: this.MODEL,
     // system_fingerprint: "fp_69829325d0",
     choices: [item],
