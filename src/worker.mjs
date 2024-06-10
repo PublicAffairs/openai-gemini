@@ -43,10 +43,18 @@ const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 // https://github.com/google/generative-ai-js/blob/0931d2ce051215db72785d76fe3ae4e0bc3b5475/packages/main/src/requests/request.ts#L67
 const API_CLIENT = "genai-js/0.5.0"; // npm view @google/generative-ai version
+const AVAILABLE_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
+
 async function handleRequest(req, apiKey) {
-  const MODEL = "gemini-1.5-flash-latest";
+  const model = req.model;
+  if (!AVAILABLE_MODELS.includes(model)) {
+    return new Response(`Error: Invalid model. Available models: ${AVAILABLE_MODELS.join(", ")}`, {
+      status: 400,
+      headers: { "Content-Type": "text/plain" }
+    });
+  }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
-  let url = `${BASE_URL}/${API_VERSION}/models/${MODEL}:${TASK}`;
+  let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
   let response;
   try {
@@ -80,13 +88,13 @@ async function handleRequest(req, apiKey) {
         .pipeThrough(new TransformStream({
           transform: toOpenAiStream,
           flush: toOpenAiStreamFlush,
-          MODEL, id, last: [],
+          model, id, last: [],
         }))
         .pipeThrough(new TextEncoderStream());
     } else {
       body = await response.text();
       try {
-        body = await processResponse(JSON.parse(body).candidates, MODEL, id);
+        body = await processResponse(JSON.parse(body).candidates, model, id);
       } catch (err) {
         console.error(err);
         response = { status: 500 };
@@ -284,7 +292,7 @@ function transformResponseStream (cand, stop, first) {
     id: this.id,
     object: "chat.completion.chunk",
     created: Math.floor(Date.now()/1000),
-    model: this.MODEL,
+    model: this.model,
     // system_fingerprint: "fp_69829325d0",
     choices: [item],
   };
