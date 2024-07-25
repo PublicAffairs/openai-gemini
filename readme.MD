@@ -86,6 +86,13 @@ _..or_:
 set OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
 ```
 
+## Models
+
+In case the model specified in the request differs from "gemini-*",
+the default [model] `gemini-1.5-pro` will be used.
+
+[model]: https://ai.google.dev/gemini-api/docs/models/gemini
+
 ---
 
 ## Possible further development
