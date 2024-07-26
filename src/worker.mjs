@@ -59,7 +59,7 @@ async function handleRequest(req, apiKey) {
         "x-goog-api-client": API_CLIENT,
       },
       body: JSON.stringify(await transformRequest(req)), // try
-    });     
+    });
   } catch (err) {
     console.error(err);
     return new Response(err, { status: 400, headers: {"Access-Control-Allow-Origin": "*"} });
@@ -76,7 +76,7 @@ async function handleRequest(req, apiKey) {
         .pipeThrough(new TransformStream({
           transform: parseStream,
           flush: parseStreamFlush,
-          buffer: "" ,
+          buffer: "",
         }))
         .pipeThrough(new TransformStream({
           transform: toOpenAiStream,
@@ -121,7 +121,7 @@ const safetySettings = harmCategory.map((category) => ({
 }));
 const fieldsMap = {
   stop: "stopSequences",
-  // n: "candidateCount", // { "error": { "code": 400, "message": "Only one candidate can be specified", "status": "INVALID_ARGUMENT" } }
+  //n: "candidateCount", // { "error": { "code": 400, "message": "Only one candidate can be specified", "status": "INVALID_ARGUMENT" } }
   max_tokens: "maxOutputTokens",
   temperature: "temperature",
   top_p: "topP",
@@ -129,7 +129,7 @@ const fieldsMap = {
 };
 const transformConfig = (req) => {
   let cfg = {};
-  // if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
+  //if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
   for (let key in req) {
     const matchedKey = fieldsMap[key];
     if (matchedKey) {
@@ -250,7 +250,7 @@ const processResponse = async (candidates, model, id) => {
     choices: candidates.map(transformCandidatesMessage),
     created: Math.floor(Date.now()/1000),
     model,
-    // system_fingerprint: "fp_69829325d0",
+    //system_fingerprint: "fp_69829325d0",
     object: "chat.completion",
   });
 };
@@ -283,7 +283,7 @@ function transformResponseStream (cand, stop, first) {
     choices: [item],
     created: Math.floor(Date.now()/1000),
     model: this.model,
-    // system_fingerprint: "fp_69829325d0",
+    //system_fingerprint: "fp_69829325d0",
     object: "chat.completion.chunk",
   };
   return "data: " + JSON.stringify(data) + delimiter;
@@ -298,20 +298,20 @@ async function toOpenAiStream (chunk, controller) {
     candidates = JSON.parse(line).candidates;
   } catch (err) {
     console.error(line);
-    console.error(err);    
+    console.error(err);
     const length = this.last.length || 1; // at least 1 error msg
     candidates = Array.from({ length }, (_, index) => ({
       finishReason: "error",
       content: { parts: [{ text: err }] },
       index,
-    }));    
-  }  
+    }));
+  }
   const cand = candidates[0]; // !!untested with candidateCount>1
   if (!this.last[cand.index]) {
     controller.enqueue(transform(cand, false, "first"));
   }
   this.last[cand.index] = cand;
-  if (cand.content) {// prevent empty data (e.g. when MAX_TOKENS)
+  if (cand.content) { // prevent empty data (e.g. when MAX_TOKENS)
     controller.enqueue(transform(cand));
   }
 }
@@ -322,5 +322,5 @@ async function toOpenAiStreamFlush (controller) {
       controller.enqueue(transform(cand, "stop"));
     }
     controller.enqueue("data: [DONE]" + delimiter);
-  }  
+  }
 }
