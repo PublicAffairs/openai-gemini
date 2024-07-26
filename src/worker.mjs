@@ -281,11 +281,11 @@ async function parseStreamFlush (controller) {
   }
 }
 
-function transformResponseStream (cand, stop, first) {
-  const item = transformCandidatesDelta(cand);
+function transformResponseStream (data, stop, first) {
+  const item = transformCandidatesDelta(data.candidates[0]);
   if (stop) { item.delta = {}; } else { item.finish_reason = null; }
   if (first) { item.delta.content = ""; } else { delete item.delta.role; }
-  const data = {
+  const output = {
     id: this.id,
     choices: [item],
     created: Math.floor(Date.now()/1000),
@@ -293,40 +293,44 @@ function transformResponseStream (cand, stop, first) {
     //system_fingerprint: "fp_69829325d0",
     object: "chat.completion.chunk",
   };
-  return "data: " + JSON.stringify(data) + delimiter;
+  if (stop && data.usageMetadata) {
+    output.usage = transformUsage(data.usageMetadata);
+  }
+  return "data: " + JSON.stringify(output) + delimiter;
 }
 const delimiter = "\n\n";
 async function toOpenAiStream (chunk, controller) {
   const transform = transformResponseStream.bind(this);
   const line = await chunk;
   if (!line) { return; }
-  let candidates;
+  let data;
   try {
-    candidates = JSON.parse(line).candidates;
+    data = JSON.parse(line);
   } catch (err) {
     console.error(line);
     console.error(err);
     const length = this.last.length || 1; // at least 1 error msg
-    candidates = Array.from({ length }, (_, index) => ({
+    const candidates = Array.from({ length }, (_, index) => ({
       finishReason: "error",
       content: { parts: [{ text: err }] },
       index,
     }));
+    data = { candidates };
   }
-  const cand = candidates[0]; // !!untested with candidateCount>1
+  const cand = data.candidates[0]; // !!untested with candidateCount>1
   if (!this.last[cand.index]) {
-    controller.enqueue(transform(cand, false, "first"));
+    controller.enqueue(transform(data, false, "first"));
   }
-  this.last[cand.index] = cand;
+  this.last[cand.index] = data;
   if (cand.content) { // prevent empty data (e.g. when MAX_TOKENS)
-    controller.enqueue(transform(cand));
+    controller.enqueue(transform(data));
   }
 }
 async function toOpenAiStreamFlush (controller) {
   const transform = transformResponseStream.bind(this);
   if (this.last.length > 0) {
-    for (const cand of this.last) {
-      controller.enqueue(transform(cand, "stop"));
+    for (const data of this.last) {
+      controller.enqueue(transform(data, "stop"));
     }
     controller.enqueue("data: [DONE]" + delimiter);
   }
