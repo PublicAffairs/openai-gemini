@@ -222,11 +222,8 @@ const transformRequest = async (req) => ({
 
 const generateChatcmplId = () => {
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "chatcmpl-";
-  for (let i = 0; i <= 29; i++) {
-    result += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return result;
+  const randomChar = () => characters[Math.floor(Math.random() * characters.length)];
+  return "chatcmpl-" + Array.from({ length: 29 }, randomChar).join("");
 };
 
 const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse#finishreason
