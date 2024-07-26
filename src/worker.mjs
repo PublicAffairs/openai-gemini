@@ -306,14 +306,13 @@ async function toOpenAiStream (chunk, controller) {
       index,
     }));    
   }  
-  for (const cand of candidates) { // !!untested with candidateCount>1
-    if (!this.last[cand.index]) {
-      controller.enqueue(transform(cand, false, "first"));
-    }
-    this.last[cand.index] = cand;
-    if (cand.content) {// prevent empty data (e.g. when MAX_TOKENS)
-      controller.enqueue(transform(cand));
-    }
+  const cand = candidates[0]; // !!untested with candidateCount>1
+  if (!this.last[cand.index]) {
+    controller.enqueue(transform(cand, false, "first"));
+  }
+  this.last[cand.index] = cand;
+  if (cand.content) {// prevent empty data (e.g. when MAX_TOKENS)
+    controller.enqueue(transform(cand));
   }
 }
 async function toOpenAiStreamFlush (controller) {
