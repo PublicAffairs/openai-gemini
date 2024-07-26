@@ -112,7 +112,7 @@ the default [model] `gemini-1.5-pro` will be used.
           - [ ] `tool` (v1beta)
       - [ ] `name`
       - [ ] `tool_calls`
-  - [x] `model` _(value ignored, model is set to `gemini-1.5-pro-latest`)_
+  - [x] `model`
   - [ ] `frequency_penalty`
   - [ ] `logit_bias`
   - [ ] `logprobs`
