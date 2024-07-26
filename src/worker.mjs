@@ -247,11 +247,11 @@ const transformCandidatesDelta = transformCandidates.bind(null, "delta");
 const processResponse = async (candidates, model, id) => {
   return JSON.stringify({
     id,
-    object: "chat.completion",
+    choices: candidates.map(transformCandidatesMessage),
     created: Math.floor(Date.now()/1000),
     model,
     // system_fingerprint: "fp_69829325d0",
-    choices: candidates.map(transformCandidatesMessage),
+    object: "chat.completion",
   });
 };
 
@@ -280,11 +280,11 @@ function transformResponseStream (cand, stop, first) {
   if (first) { item.delta.content = ""; } else { delete item.delta.role; }
   const data = {
     id: this.id,
-    object: "chat.completion.chunk",
+    choices: [item],
     created: Math.floor(Date.now()/1000),
     model: this.model,
     // system_fingerprint: "fp_69829325d0",
-    choices: [item],
+    object: "chat.completion.chunk",
   };
   return "data: " + JSON.stringify(data) + delimiter;
 }
