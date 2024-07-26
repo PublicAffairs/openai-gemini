@@ -87,7 +87,7 @@ async function handleRequest(req, apiKey) {
     } else {
       body = await response.text();
       try {
-        body = await processResponse(JSON.parse(body).candidates, model, id);
+        body = await processResponse(JSON.parse(body), model, id);
       } catch (err) {
         console.error(err);
         response = { status: 500 };
@@ -244,14 +244,21 @@ const transformCandidates = (key, cand) => ({
 const transformCandidatesMessage = transformCandidates.bind(null, "message");
 const transformCandidatesDelta = transformCandidates.bind(null, "delta");
 
-const processResponse = async (candidates, model, id) => {
+const transformUsage = (data) => ({
+  completion_tokens: data.candidatesTokenCount,
+  prompt_tokens: data.promptTokenCount,
+  total_tokens: data.totalTokenCount
+});
+
+const processResponse = async (data, model, id) => {
   return JSON.stringify({
     id,
-    choices: candidates.map(transformCandidatesMessage),
+    choices: data.candidates.map(transformCandidatesMessage),
     created: Math.floor(Date.now()/1000),
     model,
     //system_fingerprint: "fp_69829325d0",
     object: "chat.completion",
+    usage: transformUsage(data.usageMetadata),
   });
 };
 
