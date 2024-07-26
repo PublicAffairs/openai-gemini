@@ -122,12 +122,16 @@ the default [model] `gemini-1.5-pro` will be used.
   - [ ] `presence_penalty`
   - [x] `response_format`
   - [ ] `seed`
+  - [ ] `service_tier`
   - [x] `stop`: string|array (`stopSequences` [1,5])
-  - [x] stream
+  - [x] `stream`
+  - [ ] `stream_options`
+      - [ ] `include_usage`
   - [x] `temperature` (0.0..2.0 for OpenAI, but Gemini supports up to infinity)
   - [x] `top_p`
   - [ ] `tools` (v1beta)
   - [ ] `tool_choice` (v1beta)
+  - [ ] `parallel_tool_calls`
   - [ ] `user`
 
   </details>
