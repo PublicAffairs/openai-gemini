@@ -140,7 +140,7 @@ async function handleEmbeddings (req, apiKey) {
 const DEFAULT_MODEL = "gemini-2.0-flash";
 async function handleCompletions (req, apiKey) {
   let model = DEFAULT_MODEL;
-  switch(true) {
+  switch (true) {
     case typeof req.model !== "string":
       break;
     case req.model.startsWith("models/"):
@@ -162,7 +162,7 @@ async function handleCompletions (req, apiKey) {
 
   let body = response.body;
   if (response.ok) {
-    let id = generateChatcmplId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
+    let id = "chatcmpl-" + generateId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
     if (req.stream) {
       body = response.body
         .pipeThrough(new TextDecoderStream())
@@ -237,7 +237,7 @@ const transformConfig = (req) => {
     }
   }
   if (req.response_format) {
-    switch(req.response_format.type) {
+    switch (req.response_format.type) {
       case "json_schema":
         adjustSchema(req.response_format);
         cfg.responseSchema = req.response_format.json_schema?.schema;
@@ -275,7 +275,7 @@ const parseImg = async (url) => {
   } else {
     const match = url.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
     if (!match) {
-      throw new Error("Invalid image data: " + url);
+      throw new HttpError("Invalid image data: " + url, 400);
     }
     ({ mimeType, data } = match.groups);
   }
@@ -287,13 +287,13 @@ const parseImg = async (url) => {
   };
 };
 
-const transformMsg = async ({ role, content }) => {
+const transformMsg = async ({ content }) => {
   const parts = [];
   if (!Array.isArray(content)) {
     // system, user: string
     // assistant: string or null (Required unless tool_calls is specified.)
     parts.push({ text: content });
-    return { role, parts };
+    return parts;
   }
   // user:
   // An array of content parts with a defined type.
@@ -316,13 +316,13 @@ const transformMsg = async ({ role, content }) => {
         });
         break;
       default:
-        throw new TypeError(`Unknown "content" item type: "${item.type}"`);
+        throw new HttpError(`Unknown "content" item type: "${item.type}"`, 400);
     }
   }
   if (content.every(item => item.type === "image_url")) {
     parts.push({ text: "" }); // to avoid "Unable to submit request because it must have a text parameter"
   }
-  return { role, parts };
+  return parts;
 };
 
 const transformMessages = async (messages) => {
@@ -331,11 +331,17 @@ const transformMessages = async (messages) => {
   let system_instruction;
   for (const item of messages) {
     if (item.role === "system") {
-      delete item.role;
-      system_instruction = await transformMsg(item);
+      system_instruction = { parts: await transformMsg(item) };
     } else {
-      item.role = item.role === "assistant" ? "model" : "user";
-      contents.push(await transformMsg(item));
+      if (item.role === "assistant") {
+        item.role = "model";
+      } else if (item.role !== "user") {
+        throw new HttpError(`Unknown message role: "${item.role}"`, 400);
+      }
+      contents.push({
+        role: item.role,
+        parts: await transformMsg(item)
+      });
     }
   }
   if (system_instruction && contents.length === 0) {
@@ -351,10 +357,10 @@ const transformRequest = async (req) => ({
   generationConfig: transformConfig(req),
 });
 
-const generateChatcmplId = () => {
+const generateId = () => {
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const randomChar = () => characters[Math.floor(Math.random() * characters.length)];
-  return "chatcmpl-" + Array.from({ length: 29 }, randomChar).join("");
+  return Array.from({ length: 29 }, randomChar).join("");
 };
 
 const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse#finishreason
@@ -367,14 +373,19 @@ const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse
   // :"function_call",
 };
 const SEP = "\n\n|>";
-const transformCandidates = (key, cand) => ({
-  index: cand.index || 0, // 0-index is absent in new -002 models response
-  [key]: {
-    role: "assistant",
-    content: cand.content?.parts.map(p => p.text).join(SEP) },
-  logprobs: null,
-  finish_reason: reasonsMap[cand.finishReason] || cand.finishReason,
-});
+const transformCandidates = (key, cand) => {
+  const message = { role: "assistant", content: [] };
+  for (const part of cand.content?.parts ?? []) {
+    message.content.push(part.text);
+  }
+  message.content = message.content.join(SEP) || null;
+  return {
+    index: cand.index || 0, // 0-index is absent in new -002 models response
+    [key]: message,
+    logprobs: null,
+    finish_reason: reasonsMap[cand.finishReason] || cand.finishReason,
+  };
+};
 const transformCandidatesMessage = transformCandidates.bind(null, "message");
 const transformCandidatesDelta = transformCandidates.bind(null, "delta");
 
@@ -415,26 +426,12 @@ async function parseStreamFlush (controller) {
   }
 }
 
-function transformResponseStream (data, stop, first) {
-  const item = transformCandidatesDelta(data.candidates[0]);
-  if (stop) { item.delta = {}; } else { item.finish_reason = null; }
-  if (first) { item.delta.content = ""; } else { delete item.delta.role; }
-  const output = {
-    id: this.id,
-    choices: [item],
-    created: Math.floor(Date.now()/1000),
-    model: this.model,
-    //system_fingerprint: "fp_69829325d0",
-    object: "chat.completion.chunk",
-  };
-  if (data.usageMetadata && this.streamIncludeUsage) {
-    output.usage = stop ? transformUsage(data.usageMetadata) : null;
-  }
-  return "data: " + JSON.stringify(output) + delimiter;
-}
 const delimiter = "\n\n";
+const sseline = (obj) => {
+  obj.created = Math.floor(Date.now()/1000);
+  return "data: " + JSON.stringify(obj) + delimiter;
+};
 async function toOpenAiStream (chunk, controller) {
-  const transform = transformResponseStream.bind(this);
   const line = await chunk;
   if (!line) { return; }
   let data;
@@ -451,22 +448,41 @@ async function toOpenAiStream (chunk, controller) {
     }));
     data = { candidates };
   }
-  const cand = data.candidates[0];
+  const obj = {
+    id: this.id,
+    choices: data.candidates.map(transformCandidatesDelta),
+    //created: Math.floor(Date.now()/1000),
+    model: this.model,
+    //system_fingerprint: "fp_69829325d0",
+    object: "chat.completion.chunk",
+    usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
+  };
   console.assert(data.candidates.length === 1, "Unexpected candidates count: %d", data.candidates.length);
+  const cand = obj.choices[0];
   cand.index = cand.index || 0; // absent in new -002 models response
-  if (!this.last[cand.index]) {
-    controller.enqueue(transform(data, false, "first"));
+  const finish_reason = cand.finish_reason;
+  cand.finish_reason = null;
+  if (!this.last[cand.index]) { // first
+    controller.enqueue(sseline({
+      ...obj,
+      choices: [{ ...cand, tool_calls: undefined, delta: { role: "assistant", content: "" } }],
+    }));
   }
-  this.last[cand.index] = data;
-  if (cand.content) { // prevent empty data (e.g. when MAX_TOKENS)
-    controller.enqueue(transform(data));
+  delete cand.delta.role;
+  if ("content" in cand.delta) { // prevent empty data (e.g. when MAX_TOKENS)
+    controller.enqueue(sseline(obj));
   }
+  cand.finish_reason = finish_reason;
+  if (data.usageMetadata && this.streamIncludeUsage) {
+    obj.usage = transformUsage(data.usageMetadata);
+  }
+  cand.delta = {};
+  this.last[cand.index] = obj;
 }
 async function toOpenAiStreamFlush (controller) {
-  const transform = transformResponseStream.bind(this);
   if (this.last.length > 0) {
-    for (const data of this.last) {
-      controller.enqueue(transform(data, "stop"));
+    for (const obj of this.last) {
+      controller.enqueue(sseline(obj));
     }
     controller.enqueue("data: [DONE]" + delimiter);
   }
