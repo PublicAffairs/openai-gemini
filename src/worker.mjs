@@ -45,7 +45,7 @@ const API_VERSION = "v1beta";
 // https://github.com/google/generative-ai-js/blob/0931d2ce051215db72785d76fe3ae4e0bc3b5475/packages/main/src/requests/request.ts#L67
 const API_CLIENT = "genai-js/0.16.0"; // npm view @google/generative-ai version
 async function handleRequest(req, apiKey) {
-  const model = req?.model.startsWith("gemini-") ? req.model : DEFAULT_MODEL;
+  const model = req.model?.startsWith("gemini-") ? req.model : DEFAULT_MODEL;
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
