@@ -122,7 +122,7 @@ const safetySettings = harmCategory.map((category) => ({
 }));
 const fieldsMap = {
   stop: "stopSequences",
-  //n: "candidateCount", // { "error": { "code": 400, "message": "Only one candidate can be specified", "status": "INVALID_ARGUMENT" } }
+  n: "candidateCount", // { "error": { "code": 400, "message": "Only one candidate can be specified", "status": "INVALID_ARGUMENT" } }
   max_tokens: "maxOutputTokens",
   temperature: "temperature",
   top_p: "topP",
@@ -237,7 +237,7 @@ const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse
   // :"function_call",
 };
 const transformCandidates = (key, cand) => ({
-  index: cand.index,
+  index: cand.index || 0, // 0-index is absent in new -002 models response
   [key]: { role: "assistant", content: cand.content?.parts[0].text },
   logprobs: null,
   finish_reason: reasonsMap[cand.finishReason] || cand.finishReason,
@@ -319,6 +319,7 @@ async function toOpenAiStream (chunk, controller) {
     data = { candidates };
   }
   const cand = data.candidates[0]; // !!untested with candidateCount>1
+  cand.index = cand.index || 0; // absent in new -002 models response
   if (!this.last[cand.index]) {
     controller.enqueue(transform(data, false, "first"));
   }
