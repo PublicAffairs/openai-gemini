@@ -209,7 +209,7 @@ const transformMessages = async (messages) => {
     }
   }
   if (system_instruction && contents.length === 0) {
-    contents.push({ role: "user", parts: { text: "" } });
+    contents.push({ role: "model", parts: { text: " " } });
   }
   //console.info(JSON.stringify(contents, 2));
   return { system_instruction, contents };
