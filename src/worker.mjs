@@ -42,8 +42,8 @@ const handleOPTIONS = async () => {
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
-// https://github.com/google/generative-ai-js/blob/0931d2ce051215db72785d76fe3ae4e0bc3b5475/packages/main/src/requests/request.ts#L67
-const API_CLIENT = "genai-js/0.16.0"; // npm view @google/generative-ai version
+// https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
+const API_CLIENT = "genai-js/0.19.0"; // npm view @google/generative-ai version
 async function handleRequest(req, apiKey) {
   const model = req.model?.startsWith("gemini-") ? req.model : DEFAULT_MODEL;
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
