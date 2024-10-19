@@ -59,6 +59,19 @@ which is necessary for continuous integration (CI).
 - Serve locally: `wrangler dev`
 - _Worker_ [limits](https://developers.cloudflare.com/workers/platform/limits/#worker-limits)
 
+### Serve locally - with Node, Deno, Bun
+
+Only for Node: `npm install`.
+
+Then `npm run start` / `npm run start:deno` / `npm run start:bun`.
+
+#### Dev mode (watch source changes)
+
+Only for Node: `npm install --include=dev`
+
+Then: `npm run dev` / `npm run dev:deno` / `npm run dev:bun`.
+
+
 ## How to use
 If you open your newly-deployed site in a browser, you will only see a `404 Not Found` message. This is expected, as the API is not designed for direct browser access.
 To utilize it, you should enter your API address and your Gemini API key into the corresponding fields in your software settings.

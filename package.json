@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "@whatwg-node/server": "0.9"
+  },
+  "devDependencies": {
+    "nodemon": "3"
+  },
+  "scripts": {
+    "start": "node node.mjs",
+    "dev": "nodemon --watch node.mjs --watch src/*.mjs node.mjs",
+    "start:deno": "deno --allow-env --allow-net deno.mjs",
+    "dev:deno": "deno --watch --allow-env --allow-net deno.mjs",
+    "start:bun": "bun bun.mjs",
+    "dev:bun": "bun --watch bun.mjs"
+  }
+}
