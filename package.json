@@ -1,11 +1,13 @@
 {
   "dependencies": {
-    "@whatwg-node/server": "0.9"
+    "@hono/node-server": "1"
   },
   "devDependencies": {
+    "esbuild": "^0.24.0",
     "nodemon": "3"
   },
   "scripts": {
+    "build": "esbuild node.mjs --platform=node --bundle --outfile=dist/bundle.js",
     "start": "node node.mjs",
     "dev": "nodemon --watch node.mjs --watch src/*.mjs node.mjs",
     "start:deno": "deno --allow-env --allow-net deno.mjs",
