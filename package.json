@@ -1,11 +1,16 @@
 {
+  "type": "module",
   "dependencies": {
     "@whatwg-node/server": "0.9"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "28",
+    "@rollup/plugin-node-resolve": "15",
+    "rollup": "4",
     "nodemon": "3"
   },
   "scripts": {
+    "build": "rollup -c",
     "start": "node node.mjs",
     "dev": "nodemon --watch node.mjs --watch src/*.mjs node.mjs",
     "start:deno": "deno --allow-env --allow-net deno.mjs",
