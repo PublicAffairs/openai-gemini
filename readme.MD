@@ -99,12 +99,37 @@ _..or_:
 set OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
 ```
 
+Example Chat Completion API Request:
+
+```bash
+curl https://my-super-proxy.vercel.app/v1/chat/completions \
+ -H "Content-Type: application/json" \
+ -H "Authorization: Bearer $GOOGLE_API_KEY" \
+ -d '{
+     "model": "gemini-1.5-flash",
+     "messages": [{"role": "user", "content": "Say this is a test!"}],
+     "temperature": 0.7
+ }'
+```
+
+
+
 ## Models
 
 In case the model specified in the request differs from "gemini-*",
 the default [model] `gemini-1.5-pro` will be used.
 
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
+
+Model Mapping:
+
+| Gemini Model        | **Rate Limits**                                              | Optimized For                                                |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| gemini-1.0-pro      | 15 RPM (requests per minute)<br/>32,000 TPM (tokens per minute)<br/>1,500 RPD (requests per day) | Natural language tasks (Deprecated on 2/15/2025)             |
+| gemini-1.5-pro      | 2 RPM (requests per minute)<br/>32,000 TPM (tokens per minute)<br/>50 RPD (requests per day) | Complex reasoning tasks requiring more intelligence          |
+| gemini-1.5-flash    | 15 RPM (requests per minute)<br />1 million TPM (tokens per minute)<br />1,500 RPD (requests per day) | Fast and versatile performance across a diverse variety of tasks |
+| gemini-1.5-flash-8b | 15 RPM (requests per minute)<br/>1 million TPM (tokens per minute)<br/>1,500 RPD (requests per day) | High volume and lower intelligence tasks                     |
+| text-embedding-004  | 1,500 RPM (requests per minute)                              | Measuring the relatedness of text strings                    |
 
 ---
 
