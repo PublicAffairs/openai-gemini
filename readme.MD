@@ -83,20 +83,17 @@ To utilize it, you should enter your API address and your Gemini API key into th
 Typically, you should specify the API base in this format:  
 `https://my-super-proxy.vercel.app/v1`
 
-However, some software may expect it without the `/v1` ending:  
-`https://my-super-proxy.vercel.app`
-
 The relevant field may be labeled as "_OpenAI proxy_".
 You might need to look under "_Advanced settings_" or similar sections.
 Alternatively, it could be in some config file (check the relevant documentation for details).
 
 For some command-line tools, you may need to set an environment variable, _e.g._:
 ```sh
-set OPENAI_BASE_URL=https://my-super-proxy.vercel.app/v1
+OPENAI_BASE_URL=https://my-super-proxy.vercel.app/v1
 ```
 _..or_:
 ```sh
-set OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
+OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
 ```
 
 ## Models

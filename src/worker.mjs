@@ -21,7 +21,7 @@ export default {
     try {
       json = await request.json();
       if (!Array.isArray(json.messages)) {
-        throw SyntaxError(".messages array required");
+        throw new SyntaxError(".messages array required");
       }
     } catch (err) {
       console.error(err.toString());
@@ -87,7 +87,7 @@ const processModels = (data) => {
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
 // https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
 const API_CLIENT = "genai-js/0.19.0"; // npm view @google/generative-ai version
-async function handleRequest(req, apiKey) {
+async function handleRequest (req, apiKey) {
   const model = req.model?.startsWith("gemini-") ? req.model : DEFAULT_MODEL;
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
@@ -108,13 +108,13 @@ async function handleRequest(req, apiKey) {
     return new Response(err, { status: 400, headers: {"Access-Control-Allow-Origin": "*"} });
   }
 
-  let body;
+  let body = response.body;
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", "*");
   if (response.ok) {
     let id = generateChatcmplId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
     if (req.stream) {
-      body = response.body
+      body = body
         .pipeThrough(new TextDecoderStream())
         .pipeThrough(new TransformStream({
           transform: parseStream,
@@ -130,24 +130,13 @@ async function handleRequest(req, apiKey) {
     } else {
       body = await response.text();
       try {
-        body = await processResponse(JSON.parse(body), model, id);
+        body = processResponse(JSON.parse(body), model, id);
       } catch (err) {
         console.error(err);
         response = { status: 500 };
         headers.set("Content-Type", "text/plain");
       }
     }
-  } else {
-    // Error: [400 Bad Request] User location is not supported for the API use.
-    body = await response.text();
-    try {
-      const { code, status, message } = JSON.parse(body).error;
-      body = `Error: [${code} ${status}] ${message}`;
-    } catch (err) {
-      // pass body as is
-    }
-    headers.set("Content-Type", "text/plain");
-    //headers.delete("Transfer-Encoding");
   }
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
@@ -191,15 +180,18 @@ const parseImg = async (url) => {
   if (url.startsWith("http://") || url.startsWith("https://")) {
     try {
       const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText} (${url})`);
+      }
       mimeType = response.headers.get("content-type");
       data = Buffer.from(await response.arrayBuffer()).toString("base64");
     } catch (err) {
-      throw Error("Error fetching image: " + err.toString());
+      throw new Error("Error fetching image: " + err.toString());
     }
   } else {
     const match = url.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
     if (!match) {
-      throw Error("Invalid image data: " + url);
+      throw new Error("Invalid image data: " + url);
     }
     ({ mimeType, data } = match.groups);
   }
@@ -233,7 +225,7 @@ const transformMsg = async ({ role, content }) => {
       parts.push(await parseImg(item.image_url.url));
       break;
     default:
-      throw TypeError(`Unknown "content" item type: "${item.type}"`);
+      throw new TypeError(`Unknown "content" item type: "${item.type}"`);
     }
   }
   return { role, parts };
@@ -294,7 +286,7 @@ const transformUsage = (data) => ({
   total_tokens: data.totalTokenCount
 });
 
-const processResponse = async (data, model, id) => {
+const processResponse = (data, model, id) => {
   return JSON.stringify({
     id,
     choices: data.candidates.map(transformCandidatesMessage),
