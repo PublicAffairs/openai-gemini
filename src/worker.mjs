@@ -6,14 +6,16 @@ export default {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
-    const url = new URL(request.url);
-    if (!url.pathname.endsWith("/v1/chat/completions") || request.method !== "POST") {
-      return new Response("404 Not Found", { status: 404 });
-    }
     const auth = request.headers.get("Authorization");
     let apiKey = auth && auth.split(" ")[1];
     if (!apiKey) {
       return new Response("Bad credentials", { status: 401 });
+    }
+    const url = new URL(request.url);
+    if (url.pathname.endsWith("/v1/models") && request.method === "GET") {
+      return handleModels(apiKey);
+    } else if (!url.pathname.endsWith("/v1/chat/completions") || request.method !== "POST") {
+      return new Response("404 Not Found", { status: 404 });
     }
     let json;
     try {
@@ -39,9 +41,50 @@ const handleOPTIONS = async () => {
   });
 };
 
-const DEFAULT_MODEL = "gemini-1.5-pro-latest";
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
+
+async function handleModels (apiKey) {
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
+      headers: {
+        "x-goog-api-key": apiKey,
+        "x-goog-api-client": API_CLIENT,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return new Response(err, { status: 400, headers: {"Access-Control-Allow-Origin": "*"} });
+  }
+  let body = response.body;
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  if (response.ok) {
+    body = await response.text();
+    try {
+      body = processModels(JSON.parse(body));
+    } catch (err) {
+      console.error(err);
+      response = { status: 500 };
+    }
+  }
+  return new Response(body, { status: response.status, statusText: response.statusText, headers });
+}
+
+const processModels = (data) => {
+  return JSON.stringify({
+    object: "list",
+    data: data.models.map((model) => ({
+      id: model.name.replace("models/", ""),
+      object: "model",
+      created: 0,
+      owned_by: "",
+    })),
+  }, null, "  ");
+};
+
+const DEFAULT_MODEL = "gemini-1.5-pro-latest";
 // https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
 const API_CLIENT = "genai-js/0.19.0"; // npm view @google/generative-ai version
 async function handleRequest(req, apiKey) {

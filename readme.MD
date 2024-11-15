@@ -150,4 +150,4 @@ the default [model] `gemini-1.5-pro` will be used.
   </details>
 - [ ] `completions`
 - [ ] `embeddings`
-- [ ] `models`
+- [x] `models`
