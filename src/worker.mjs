@@ -6,29 +6,43 @@ export default {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
-    const auth = request.headers.get("Authorization");
-    let apiKey = auth && auth.split(" ")[1];
-    if (!apiKey) {
-      return new Response("Bad credentials", { status: 401 });
-    }
-    const url = new URL(request.url);
-    if (url.pathname.endsWith("/v1/models") && request.method === "GET") {
-      return handleModels(apiKey);
-    } else if (!url.pathname.endsWith("/v1/chat/completions") || request.method !== "POST") {
-      return new Response("404 Not Found", { status: 404 });
-    }
-    let json;
     try {
-      json = await request.json();
-      if (!Array.isArray(json.messages)) {
-        throw new SyntaxError(".messages array required");
+      const auth = request.headers.get("Authorization");
+      let apiKey = auth && auth.split(" ")[1];
+      if (!apiKey) {
+        throw new HttpError("Bad credentials", 401);
+      }
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/models") && request.method === "GET") {
+        return handleModels(apiKey);
+      } else if (url.pathname.endsWith("/chat/completions") && request.method === "POST") {
+        const json = await request.json();
+        if (!Array.isArray(json.messages)) {
+          throw new HttpError(".messages array required", 400);
+        }
+        return handleRequest(json, apiKey);
+      } else {
+        throw new HttpError("404 Not Found", 404);
       }
     } catch (err) {
       console.error(err.toString());
-      return new Response(err, { status: 400 });
+      return new Response(err, { status: err.status ?? 500, headers: fixCors() });
     }
-    return handleRequest(json, apiKey);
   }
+};
+
+class HttpError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = this.constructor.name;
+    this.status = status;
+  }
+}
+
+const fixCors = (headers) => {
+  headers = new Headers(headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  return headers;
 };
 
 const handleOPTIONS = async () => {
@@ -44,32 +58,19 @@ const handleOPTIONS = async () => {
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
-async function handleModels (apiKey) {
-  let response;
-  try {
-    response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
-      headers: {
-        "x-goog-api-key": apiKey,
-        "x-goog-api-client": API_CLIENT,
-      },
-    });
-  } catch (err) {
-    console.error(err);
-    return new Response(err, { status: 400, headers: {"Access-Control-Allow-Origin": "*"} });
-  }
+async function handleModels(apiKey) {
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
+    headers: {
+      "x-goog-api-key": apiKey,
+      "x-goog-api-client": API_CLIENT,
+    },
+  });
   let body = response.body;
-  const headers = new Headers(response.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
   if (response.ok) {
     body = await response.text();
-    try {
-      body = processModels(JSON.parse(body));
-    } catch (err) {
-      console.error(err);
-      response = { status: 500 };
-    }
+    body = processModels(JSON.parse(body));
   }
-  return new Response(body, { status: response.status, statusText: response.statusText, headers });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: fixCors(response.headers) });
 }
 
 const processModels = (data) => {
@@ -92,29 +93,21 @@ async function handleRequest (req, apiKey) {
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-        "x-goog-api-client": API_CLIENT,
-      },
-      body: JSON.stringify(await transformRequest(req)), // try
-    });
-  } catch (err) {
-    console.error(err);
-    return new Response(err, { status: 400, headers: {"Access-Control-Allow-Origin": "*"} });
-  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+      "x-goog-api-client": API_CLIENT,
+    },
+    body: JSON.stringify(await transformRequest(req)), // try
+  });
 
   let body = response.body;
-  const headers = new Headers(response.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
   if (response.ok) {
     let id = generateChatcmplId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
     if (req.stream) {
-      body = body
+      body = response.body
         .pipeThrough(new TextDecoderStream())
         .pipeThrough(new TransformStream({
           transform: parseStream,
@@ -129,16 +122,10 @@ async function handleRequest (req, apiKey) {
         .pipeThrough(new TextEncoderStream());
     } else {
       body = await response.text();
-      try {
-        body = processResponse(JSON.parse(body), model, id);
-      } catch (err) {
-        console.error(err);
-        response = { status: 500 };
-        headers.set("Content-Type", "text/plain");
-      }
+      body = processResponse(JSON.parse(body), model, id);
     }
   }
-  return new Response(body, { status: response.status, statusText: response.statusText, headers });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: fixCors(response.headers) });
 }
 
 const harmCategory = [
