@@ -128,7 +128,7 @@ the default [model] `gemini-1.5-pro` will be used.
   - [ ] `logprobs`
   - [ ] `top_logprobs`
   - [x] `max_tokens`
-  - [x] `n` (`candidateCount` <8) _n.b.: atm api does not accept >1_
+  - [x] `n` (`candidateCount` <8, not for streaming)
   - [ ] `presence_penalty`
   - [x] `response_format`
   - [ ] `seed`
