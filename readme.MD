@@ -20,8 +20,8 @@ It can be easily deployed to various providers for free
 You will need a personal Google [API key](https://makersuite.google.com/app/apikey).
 
 > [!IMPORTANT]
-> Even if you are located outside of the [supported regions](https://ai.google.dev/available_regions#available_regions)
-> (e.g., in Europe), it is still possible to acquire one using a VPN.
+> Even if you are located outside of the [supported regions](https://ai.google.dev/gemini-api/docs/available-regions#available_regions),
+> it is still possible to acquire one using a VPN.
 
 Deploy the project to one of the providers, using the instructions below.
 You will need to set up an account there.

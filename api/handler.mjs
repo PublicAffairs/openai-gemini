@@ -5,16 +5,17 @@ export default worker.fetch;
 export const config = {
   runtime: "edge", 
   // Available languages and regions for Google AI Studio and Gemini API
-  // https://ai.google.dev/available_regions#available_regions
-  // https://vercel.com/docs/concepts/edge-network/regions
+  // https://ai.google.dev/gemini-api/docs/available-regions#available_regions
+  // Vercel Edge Network Regions
+  // https://vercel.com/docs/edge-network/regions#region-list
   regions: [
-    //"arn1",
+    "arn1",
     "bom1",
-    //"cdg1",
+    "cdg1",
     "cle1",
     "cpt1",
-    //"dub1",
-    //"fra1",
+    "dub1",
+    "fra1",
     "gru1",
     //"hkg1",
     "hnd1",
