@@ -6,6 +6,10 @@ export default {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
+    const errHandler = (err) => {
+      console.error(err);
+      return new Response(err.message, { status: err.status ?? 500, headers: fixCors() });
+    };
     try {
       const auth = request.headers.get("Authorization");
       const apiKey = auth?.split(" ")[1];
@@ -20,16 +24,17 @@ export default {
       const url = new URL(request.url);
       if (url.pathname.endsWith("/chat/completions")) {
         assert(request.method === "POST");
-        return handleCompletions(await request.json(), apiKey);
+        return handleCompletions(await request.json(), apiKey)
+          .catch(errHandler);
       } else if (url.pathname.endsWith("/models")) {
         assert(request.method === "GET");
-        return handleModels(apiKey);
+        return handleModels(apiKey)
+          .catch(errHandler);
       } else {
         throw new HttpError("404 Not Found", 404);
       }
     } catch (err) {
-      console.error(err.toString());
-      return new Response(err.message, { status: err.status ?? 500, headers: fixCors() });
+      return errHandler(err);
     }
   }
 };
