@@ -27,6 +27,10 @@ export default {
           assert(request.method === "POST");
           return handleCompletions(await request.json(), apiKey)
             .catch(errHandler);
+        case pathname.endsWith("/embeddings"):
+          assert(request.method === "POST");
+          return handleEmbeddings(await request.json(), apiKey)
+            .catch(errHandler);
         case pathname.endsWith("/models"):
           assert(request.method === "GET");
           return handleModels(apiKey)
@@ -87,6 +91,52 @@ async function handleModels (apiKey) {
         created: 0,
         owned_by: "",
       })),
+    }, null, "  ");
+  }
+  return new Response(body, { ...response, headers: fixCors(response.headers) });
+}
+
+const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
+async function handleEmbeddings (req, apiKey) {
+  if (typeof req.model !== "string") {
+    throw new HttpError("model is not specified", 400);
+  }
+  if (!Array.isArray(req.input)) {
+    req.input = [ req.input ];
+  }
+  let model;
+  if (req.model.startsWith("models/")) {
+    model = req.model;
+  } else {
+    req.model = DEFAULT_EMBEDDINGS_MODEL;
+    model = "models/" + req.model;
+  }
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+      "x-goog-api-client": API_CLIENT,
+    },
+    body: JSON.stringify({
+      "requests": req.input.map(text => ({
+        model,
+        content: { parts: { text } },
+        outputDimensionality: req.dimensions,
+      }))
+    })
+  });
+  let { body } = response;
+  if (response.ok) {
+    const { embeddings } = JSON.parse(await response.text());
+    body = JSON.stringify({
+      object: "list",
+      data: embeddings.map(({ values }, index) => ({
+        object: "embedding",
+        index,
+        embedding: values,
+      })),
+      model: req.model,
     }, null, "  ");
   }
   return new Response(body, { ...response, headers: fixCors(response.headers) });
