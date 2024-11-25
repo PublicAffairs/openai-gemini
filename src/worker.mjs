@@ -8,25 +8,28 @@ export default {
     }
     try {
       const auth = request.headers.get("Authorization");
-      let apiKey = auth && auth.split(" ")[1];
+      const apiKey = auth?.split(" ")[1];
       if (!apiKey) {
         throw new HttpError("Bad credentials", 401);
       }
-      const url = new URL(request.url);
-      if (url.pathname.endsWith("/models") && request.method === "GET") {
-        return handleModels(apiKey);
-      } else if (url.pathname.endsWith("/chat/completions") && request.method === "POST") {
-        const json = await request.json();
-        if (!Array.isArray(json.messages)) {
-          throw new HttpError(".messages array required", 400);
+      const assert = (success) => {
+        if (!success) {
+          throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
         }
-        return handleRequest(json, apiKey);
+      };
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/chat/completions")) {
+        assert(request.method === "POST");
+        return handleCompletions(await request.json(), apiKey);
+      } else if (url.pathname.endsWith("/models")) {
+        assert(request.method === "GET");
+        return handleModels(apiKey);
       } else {
         throw new HttpError("404 Not Found", 404);
       }
     } catch (err) {
       console.error(err.toString());
-      return new Response(err, { status: err.status ?? 500, headers: fixCors() });
+      return new Response(err.message, { status: err.status ?? 500, headers: fixCors() });
     }
   }
 };
@@ -57,38 +60,34 @@ const handleOPTIONS = async () => {
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
+// https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
+const API_CLIENT = "genai-js/0.19.0"; // npm view @google/generative-ai version
 
-async function handleModels(apiKey) {
+async function handleModels (apiKey) {
   const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
     headers: {
       "x-goog-api-key": apiKey,
       "x-goog-api-client": API_CLIENT,
     },
   });
-  let body = response.body;
+  let { body } = response;
   if (response.ok) {
-    body = await response.text();
-    body = processModels(JSON.parse(body));
+    const { models } = JSON.parse(await response.text());
+    body = JSON.stringify({
+      object: "list",
+      data: models.map(({ name }) => ({
+        id: name.replace("models/", ""),
+        object: "model",
+        created: 0,
+        owned_by: "",
+      })),
+    }, null, "  ");
   }
-  return new Response(body, { status: response.status, statusText: response.statusText, headers: fixCors(response.headers) });
+  return new Response(body, { ...response, headers: fixCors(response.headers) });
 }
 
-const processModels = (data) => {
-  return JSON.stringify({
-    object: "list",
-    data: data.models.map((model) => ({
-      id: model.name.replace("models/", ""),
-      object: "model",
-      created: 0,
-      owned_by: "",
-    })),
-  }, null, "  ");
-};
-
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
-// https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
-const API_CLIENT = "genai-js/0.19.0"; // npm view @google/generative-ai version
-async function handleRequest (req, apiKey) {
+async function handleCompletions (req, apiKey) {
   const model = req.model?.startsWith("gemini-") ? req.model : DEFAULT_MODEL;
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
@@ -122,10 +121,10 @@ async function handleRequest (req, apiKey) {
         .pipeThrough(new TextEncoderStream());
     } else {
       body = await response.text();
-      body = processResponse(JSON.parse(body), model, id);
+      body = processCompletionsResponse(JSON.parse(body), model, id);
     }
   }
-  return new Response(body, { status: response.status, statusText: response.statusText, headers: fixCors(response.headers) });
+  return new Response(body, { ...response, headers: fixCors(response.headers) });
 }
 
 const harmCategory = [
@@ -135,7 +134,7 @@ const harmCategory = [
   "HARM_CATEGORY_HARASSMENT",
   "HARM_CATEGORY_CIVIC_INTEGRITY",
 ];
-const safetySettings = harmCategory.map((category) => ({
+const safetySettings = harmCategory.map(category => ({
   category,
   threshold: "BLOCK_NONE",
 }));
@@ -205,20 +204,21 @@ const transformMsg = async ({ role, content }) => {
   // Image input is only supported when using the gpt-4-visual-preview model.
   for (const item of content) {
     switch (item.type) {
-    case "text":
-      parts.push({ text: item.text });
-      break;
-    case "image_url":
-      parts.push(await parseImg(item.image_url.url));
-      break;
-    default:
-      throw new TypeError(`Unknown "content" item type: "${item.type}"`);
+      case "text":
+        parts.push({ text: item.text });
+        break;
+      case "image_url":
+        parts.push(await parseImg(item.image_url.url));
+        break;
+      default:
+        throw new TypeError(`Unknown "content" item type: "${item.type}"`);
     }
   }
   return { role, parts };
 };
 
 const transformMessages = async (messages) => {
+  if (!messages) { return; }
   const contents = [];
   let system_instruction;
   for (const item of messages) {
@@ -273,7 +273,7 @@ const transformUsage = (data) => ({
   total_tokens: data.totalTokenCount
 });
 
-const processResponse = (data, model, id) => {
+const processCompletionsResponse = (data, model, id) => {
   return JSON.stringify({
     id,
     choices: data.candidates.map(transformCandidatesMessage),
