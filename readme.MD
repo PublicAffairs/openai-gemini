@@ -5,6 +5,7 @@ but there are many tools that work exclusively with the OpenAI API.
 
 This project provides a personal OpenAI-compatible endpoint for free.
 
+
 ## Serverless?
 
 Although it runs in the cloud, it does not require server maintenance.
@@ -14,6 +15,7 @@ It can be easily deployed to various providers for free
 > [!TIP]
 > Running the proxy endpoint locally is also an option,
 > though it's more appropriate for development use.
+
 
 ## How to start
 
@@ -29,6 +31,7 @@ You will need to set up an account there.
 If you opt for “button-deploy”, you'll be guided through the process of forking the repository first,
 which is necessary for continuous integration (CI).
 
+
 ### Deploy with Vercel
 
  [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/PublicAffairs/openai-gemini&repository-name=my-openai-gemini)
@@ -36,6 +39,7 @@ which is necessary for continuous integration (CI).
   `vercel deploy`
 - Serve locally: `vercel dev`
 - Vercel _Functions_ [limitations](https://vercel.com/docs/functions/limitations) (with _Edge_ runtime)
+
 
 ### Deploy to Netlify
 
@@ -49,6 +53,7 @@ which is necessary for continuous integration (CI).
   - `/edge/v1`  
     _Edge functions_ [limits](https://docs.netlify.com/edge-functions/limits/)
 
+
 ### Deploy to Cloudflare
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/PublicAffairs/openai-gemini)
@@ -59,11 +64,18 @@ which is necessary for continuous integration (CI).
 - Serve locally: `wrangler dev`
 - _Worker_ [limits](https://developers.cloudflare.com/workers/platform/limits/#worker-limits)
 
+
+### Deploy to Deno
+
+See details [here](https://github.com/PublicAffairs/openai-gemini/discussions/19).
+
+
 ### Serve locally - with Node, Deno, Bun
 
 Only for Node: `npm install`.
 
 Then `npm run start` / `npm run start:deno` / `npm run start:bun`.
+
 
 #### Dev mode (watch source changes)
 
@@ -89,12 +101,13 @@ Alternatively, it could be in some config file (check the relevant documentation
 
 For some command-line tools, you may need to set an environment variable, _e.g._:
 ```sh
-OPENAI_BASE_URL=https://my-super-proxy.vercel.app/v1
+OPENAI_BASE_URL="https://my-super-proxy.vercel.app/v1"
 ```
 _..or_:
 ```sh
-OPENAI_API_BASE=https://my-super-proxy.vercel.app/v1
+OPENAI_API_BASE="https://my-super-proxy.vercel.app/v1"
 ```
+
 
 ## Models
 
@@ -118,7 +131,7 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
 
 ---
 
-## Possible further development
+## Supported API endpoints and applicable parameters
 
 - [x] `chat/completions`
 
