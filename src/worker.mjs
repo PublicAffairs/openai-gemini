@@ -21,17 +21,18 @@ export default {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
         }
       };
-      const url = new URL(request.url);
-      if (url.pathname.endsWith("/chat/completions")) {
-        assert(request.method === "POST");
-        return handleCompletions(await request.json(), apiKey)
-          .catch(errHandler);
-      } else if (url.pathname.endsWith("/models")) {
-        assert(request.method === "GET");
-        return handleModels(apiKey)
-          .catch(errHandler);
-      } else {
-        throw new HttpError("404 Not Found", 404);
+      const { pathname } = new URL(request.url);
+      switch (true) {
+        case pathname.endsWith("/chat/completions"):
+          assert(request.method === "POST");
+          return handleCompletions(await request.json(), apiKey)
+            .catch(errHandler);
+        case pathname.endsWith("/models"):
+          assert(request.method === "GET");
+          return handleModels(apiKey)
+            .catch(errHandler);
+        default:
+          throw new HttpError("404 Not Found", 404);
       }
     } catch (err) {
       return errHandler(err);
