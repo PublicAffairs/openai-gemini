@@ -263,11 +263,10 @@ const transformMsg = async ({ role, content }) => {
     parts.push({ text: content });
     return { role, parts };
   }
-  // OpenAI "model": "gpt-4-vision-preview"
   // user:
-  // An array of content parts with a defined type, each can be of type text or image_url when passing in images.
-  // You can pass multiple images by adding multiple image_url content parts.
-  // Image input is only supported when using the gpt-4-visual-preview model.
+  // An array of content parts with a defined type.
+  // Supported options differ based on the model being used to generate the response.
+  // Can contain text, image, or audio inputs.
   for (const item of content) {
     switch (item.type) {
       case "text":
@@ -275,6 +274,14 @@ const transformMsg = async ({ role, content }) => {
         break;
       case "image_url":
         parts.push(await parseImg(item.image_url.url));
+        break;
+      case "input_audio":
+        parts.push({
+          inlineData: {
+            mimeType: "audio/" + item.input_audio.format,
+            data: item.input_audio.data,
+          }
+        });
         break;
       default:
         throw new TypeError(`Unknown "content" item type: "${item.type}"`);

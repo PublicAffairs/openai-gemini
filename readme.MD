@@ -106,6 +106,16 @@ or "models/". Otherwise, these defaults apply:
 
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
 
+
+## Media
+
+[Vision] and [audio] input supported as per OpenAI [specs].
+Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
+
+[vision]: https://platform.openai.com/docs/guides/vision
+[audio]: https://platform.openai.com/docs/guides/audio?audio-generation-quickstart-example=audio-in
+[specs]: https://platform.openai.com/docs/api-reference/chat/create
+
 ---
 
 ## Possible further development
