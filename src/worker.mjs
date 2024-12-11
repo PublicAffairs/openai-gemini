@@ -155,6 +155,11 @@ async function handleCompletions (req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
+  // add support for gemini-2.0-flash-exp
+  if (req.model === "gemini-2.0-flash-exp"){
+     model = "gemini-2.0-flash-exp"
+  }
+
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
