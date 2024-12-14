@@ -210,7 +210,7 @@ const fieldsMap = {
   max_tokens: "maxOutputTokens",
   temperature: "temperature",
   top_p: "topP",
-  //..."topK"
+  top_k: "topK", // non-standard
   frequency_penalty: "frequencyPenalty",
   presence_penalty: "presencePenalty",
 };
