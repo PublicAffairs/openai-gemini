@@ -206,7 +206,7 @@ const safetySettings = harmCategory.map(category => ({
 }));
 const fieldsMap = {
   stop: "stopSequences",
-  n: "candidateCount", // { "error": { "code": 400, "message": "Only one candidate can be specified", "status": "INVALID_ARGUMENT" } }
+  n: "candidateCount", // not for streaming
   max_tokens: "maxOutputTokens",
   temperature: "temperature",
   top_p: "topP",
