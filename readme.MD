@@ -149,13 +149,13 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
       - [ ] `name`
       - [ ] `tool_calls`
   - [x] `model`
-  - [ ] `frequency_penalty`
+  - [x] `frequency_penalty`
   - [ ] `logit_bias`
   - [ ] `logprobs`
   - [ ] `top_logprobs`
   - [x] `max_tokens`
   - [x] `n` (`candidateCount` <8, not for streaming)
-  - [ ] `presence_penalty`
+  - [x] `presence_penalty`
   - [x] `response_format`
   - [ ] `seed`
   - [ ] `service_tier`

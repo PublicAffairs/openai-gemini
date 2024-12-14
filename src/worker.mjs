@@ -211,6 +211,8 @@ const fieldsMap = {
   temperature: "temperature",
   top_p: "topP",
   //..."topK"
+  frequency_penalty: "frequencyPenalty",
+  presence_penalty: "presencePenalty",
 };
 const transformConfig = (req) => {
   let cfg = {};
