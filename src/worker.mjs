@@ -182,6 +182,7 @@ async function handleCompletions (req, apiKey) {
         .pipeThrough(new TransformStream({
           transform: toOpenAiStream,
           flush: toOpenAiStreamFlush,
+          streamIncludeUsage: req.stream_options?.include_usage,
           model, id, last: [],
         }))
         .pipeThrough(new TextEncoderStream());
@@ -391,8 +392,8 @@ function transformResponseStream (data, stop, first) {
     //system_fingerprint: "fp_69829325d0",
     object: "chat.completion.chunk",
   };
-  if (stop && data.usageMetadata) {
-    output.usage = transformUsage(data.usageMetadata);
+  if (data.usageMetadata && this.streamIncludeUsage) {
+    output.usage = stop ? transformUsage(data.usageMetadata) : null;
   }
   return "data: " + JSON.stringify(output) + delimiter;
 }

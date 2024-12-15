@@ -161,8 +161,8 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [ ] `service_tier`
   - [x] `stop`: string|array (`stopSequences` [1,5])
   - [x] `stream`
-  - [ ] `stream_options`
-      - [ ] `include_usage`
+  - [x] `stream_options`
+      - [x] `include_usage`
   - [x] `temperature` (0.0..2.0 for OpenAI, but Gemini supports up to infinity)
   - [x] `top_p`
   - [ ] `tools` (v1beta)
