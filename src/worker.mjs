@@ -145,12 +145,12 @@ async function handleEmbeddings (req, apiKey) {
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
 async function handleCompletions (req, apiKey) {
   let model = DEFAULT_MODEL;
-  /* eslint-disable no-fallthrough */
   switch(true) {
     case typeof req.model !== "string":
       break;
     case req.model.startsWith("models/"):
       model = req.model.substring(7);
+      break;
     case req.model.startsWith("gemini-"):
     case req.model.startsWith("learnlm-"):
       model = req.model;
