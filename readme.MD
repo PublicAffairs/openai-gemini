@@ -157,6 +157,9 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `n` (`candidateCount` <8, not for streaming)
   - [x] `presence_penalty`
   - [x] `response_format`
+      - [x] "json_object"
+      - [x] "json_schema" (a select subset of an OpenAPI 3.0 schema object)
+      - [x] "text"
   - [ ] `seed`
   - [ ] `service_tier`
   - [x] `stop`: string|array (`stopSequences` [1,5])

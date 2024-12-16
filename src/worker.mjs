@@ -224,8 +224,20 @@ const transformConfig = (req) => {
       cfg[matchedKey] = req[key];
     }
   }
-  if (req.response_format?.type === "json_object") {
-    cfg.response_mime_type = "application/json";
+  if (req.response_format) {
+    switch(req.response_format.type) {
+      case "json_schema":
+        cfg.responseSchema = req.response_format.json_schema?.schema;
+        // eslint-disable-next-line no-fallthrough
+      case "json_object":
+        cfg.responseMimeType = "application/json";
+        break;
+      case "text":
+        cfg.responseMimeType = "text/plain";
+        break;
+      default:
+        throw new HttpError("Unsupported response_format.type", 400);
+    }
   }
   return cfg;
 };
