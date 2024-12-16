@@ -228,6 +228,10 @@ const transformConfig = (req) => {
     switch(req.response_format.type) {
       case "json_schema":
         cfg.responseSchema = req.response_format.json_schema?.schema;
+        if (cfg.responseSchema && "enum" in cfg.responseSchema) {
+          cfg.responseMimeType = "text/x.enum";
+          break;
+        }
         // eslint-disable-next-line no-fallthrough
       case "json_object":
         cfg.responseMimeType = "application/json";
