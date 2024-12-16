@@ -142,10 +142,10 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `messages`
       - [x] `content`
       - [x] `role`
-          - [x] `system` (=>`system_instruction`)
-          - [x] `user`
-          - [x] `assistant`
-          - [ ] `tool` (v1beta)
+          - [x] "system" (=>`system_instruction`)
+          - [x] "user"
+          - [x] "assistant"
+          - [ ] "tool" (v1beta)
       - [ ] `name`
       - [ ] `tool_calls`
   - [x] `model`
@@ -161,7 +161,6 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
       - [x] "json_schema" (a select subset of an OpenAPI 3.0 schema object)
       - [x] "text"
   - [ ] `seed`
-  - [ ] `service_tier`
   - [x] `stop`: string|array (`stopSequences` [1,5])
   - [x] `stream`
   - [x] `stream_options`
@@ -171,7 +170,6 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [ ] `tools` (v1beta)
   - [ ] `tool_choice` (v1beta)
   - [ ] `parallel_tool_calls`
-  - [ ] `user`
 
   </details>
 - [ ] `completions`
