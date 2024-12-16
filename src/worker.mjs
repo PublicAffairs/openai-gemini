@@ -209,6 +209,7 @@ const fieldsMap = {
   stop: "stopSequences",
   n: "candidateCount", // not for streaming
   max_tokens: "maxOutputTokens",
+  max_completion_tokens: "maxOutputTokens",
   temperature: "temperature",
   top_p: "topP",
   top_k: "topK", // non-standard
