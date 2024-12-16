@@ -8,7 +8,7 @@ export default {
     }
     const errHandler = (err) => {
       console.error(err);
-      return new Response(err.message, { status: err.status ?? 500, headers: fixCors() });
+      return new Response(err.message, fixCors({ status: err.status ?? 500 }));
     };
     try {
       const auth = request.headers.get("Authorization");
@@ -52,10 +52,10 @@ class HttpError extends Error {
   }
 }
 
-const fixCors = (headers) => {
+const fixCors = ({ headers, status, statusText }) => {
   headers = new Headers(headers);
   headers.set("Access-Control-Allow-Origin", "*");
-  return headers;
+  return { headers, status, statusText };
 };
 
 const handleOPTIONS = async () => {
@@ -93,7 +93,7 @@ async function handleModels (apiKey) {
       })),
     }, null, "  ");
   }
-  return new Response(body, { ...response, headers: fixCors(response.headers) });
+  return new Response(body, fixCors(response));
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
@@ -139,7 +139,7 @@ async function handleEmbeddings (req, apiKey) {
       model: req.model,
     }, null, "  ");
   }
-  return new Response(body, { ...response, headers: fixCors(response.headers) });
+  return new Response(body, fixCors(response));
 }
 
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
@@ -191,7 +191,7 @@ async function handleCompletions (req, apiKey) {
       body = processCompletionsResponse(JSON.parse(body), model, id);
     }
   }
-  return new Response(body, { ...response, headers: fixCors(response.headers) });
+  return new Response(body, fixCors(response));
 }
 
 const harmCategory = [
