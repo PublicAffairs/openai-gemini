@@ -13,9 +13,6 @@ export default {
     try {
       const auth = request.headers.get("Authorization");
       const apiKey = auth?.split(" ")[1];
-      if (!apiKey) {
-        throw new HttpError("Bad credentials", 401);
-      }
       const assert = (success) => {
         if (!success) {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
@@ -70,15 +67,18 @@ const handleOPTIONS = async () => {
 
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
+
 // https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
 const API_CLIENT = "genai-js/0.19.0"; // npm view @google/generative-ai version
+const makeHeaders = (apiKey, more) => ({
+  "x-goog-api-client": API_CLIENT,
+  ...(apiKey && { "x-goog-api-key": apiKey }),
+  ...more
+});
 
 async function handleModels (apiKey) {
   const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
-    headers: {
-      "x-goog-api-key": apiKey,
-      "x-goog-api-client": API_CLIENT,
-    },
+    headers: makeHeaders(apiKey),
   });
   let { body } = response;
   if (response.ok) {
@@ -113,11 +113,7 @@ async function handleEmbeddings (req, apiKey) {
   }
   const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-      "x-goog-api-client": API_CLIENT,
-    },
+    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
       "requests": req.input.map(text => ({
         model,
@@ -160,11 +156,7 @@ async function handleCompletions (req, apiKey) {
   if (req.stream) { url += "?alt=sse"; }
   const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-      "x-goog-api-client": API_CLIENT,
-    },
+    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify(await transformRequest(req)), // try
   });
 
