@@ -428,7 +428,8 @@ async function toOpenAiStream (chunk, controller) {
     }));
     data = { candidates };
   }
-  const cand = data.candidates[0]; // !!untested with candidateCount>1
+  const cand = data.candidates[0];
+  console.assert(data.candidates.length === 1, "Unexpected candidates count: %d", data.candidates.length);
   cand.index = cand.index || 0; // absent in new -002 models response
   if (!this.last[cand.index]) {
     controller.enqueue(transform(data, false, "first"));
