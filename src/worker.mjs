@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-// alt: import { base64url } from "rfc4648";
 
 export default {
   async fetch (request) {
