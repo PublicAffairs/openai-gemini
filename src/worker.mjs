@@ -298,6 +298,9 @@ const transformMsg = async ({ role, content }) => {
         throw new TypeError(`Unknown "content" item type: "${item.type}"`);
     }
   }
+  if (content.every(item => item.type === "image_url")) {
+    parts.push({ text: "" }); // to avoid "Unable to submit request because it must have a text parameter"
+  }
   return { role, parts };
 };
 
