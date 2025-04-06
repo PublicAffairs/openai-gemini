@@ -114,7 +114,7 @@ OPENAI_API_BASE="https://my-super-proxy.vercel.app/v1"
 Requests use the specified [model] if its name starts with "gemini-", "gemma-", "learnlm-", 
 or "models/". Otherwise, these defaults apply:
 
-- `chat/completions`: `gemini-1.5-pro-latest`
+- `chat/completions`: `gemini-2.0-flash`
 - `embeddings`: `text-embedding-004`
 
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
