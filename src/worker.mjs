@@ -186,6 +186,25 @@ async function handleCompletions (req, apiKey) {
   return new Response(body, fixCors(response));
 }
 
+const adjustProps = (schemaPart) => {
+  if (typeof schemaPart !== "object" || schemaPart === null) {
+    return;
+  }
+  if (Array.isArray(schemaPart)) {
+    schemaPart.forEach(adjustProps);
+  } else {
+    if (schemaPart.type === "object" && schemaPart.properties && schemaPart.additionalProperties === false) {
+      delete schemaPart.additionalProperties;
+    }
+    Object.values(schemaPart).forEach(adjustProps);
+  }
+};
+const adjustSchema = (schema) => {
+  const obj = schema[schema.type];
+  delete obj.strict;
+  return adjustProps(schema);
+};
+
 const harmCategory = [
   "HARM_CATEGORY_HATE_SPEECH",
   "HARM_CATEGORY_SEXUALLY_EXPLICIT",
@@ -220,6 +239,7 @@ const transformConfig = (req) => {
   if (req.response_format) {
     switch(req.response_format.type) {
       case "json_schema":
+        adjustSchema(req.response_format);
         cfg.responseSchema = req.response_format.json_schema?.schema;
         if (cfg.responseSchema && "enum" in cfg.responseSchema) {
           cfg.responseMimeType = "text/x.enum";
