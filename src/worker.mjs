@@ -287,8 +287,52 @@ const parseImg = async (url) => {
   };
 };
 
-const transformMsg = async ({ content }) => {
+const transformMsg = async ({ content, tool_calls, tool_call_id }, fnames) => {
   const parts = [];
+  if (tool_call_id !== undefined) {
+    let response;
+    try {
+      response = JSON.parse(content);
+    } catch (err) {
+      console.error("Error parsing function response content:", err);
+      throw new HttpError("Invalid function response: " + content, 400);
+    }
+    if (typeof response !== "object" || response === null || Array.isArray(response)) {
+      response = { result: response };
+    }
+    parts.push({
+      functionResponse: {
+        id: tool_call_id.startsWith("{") ? null : tool_call_id,
+        name: fnames[tool_call_id],
+        response,
+      }
+    });
+    return parts;
+  }
+  if (tool_calls) {
+    for (const tcall of tool_calls) {
+      if (tcall.type !== "function") {
+        throw new HttpError(`Unsupported tool_call type: "${tcall.type}"`, 400);
+      }
+      const { function: { arguments: argstr, name }, id } = tcall;
+      let args;
+      try {
+        args = JSON.parse(argstr);
+      } catch (err) {
+        console.error("Error parsing function arguments:", err);
+        throw new HttpError("Invalid function arguments: " + argstr, 400);
+      }
+      parts.push({
+        functionCall: {
+          id: id.startsWith("{") ? null : id,
+          name,
+          args,
+        }
+      });
+      fnames[id] = name;
+    }
+    return parts;
+  }
   if (!Array.isArray(content)) {
     // system, user: string
     // assistant: string or null (Required unless tool_calls is specified.)
@@ -329,18 +373,26 @@ const transformMessages = async (messages) => {
   if (!messages) { return; }
   const contents = [];
   let system_instruction;
+  const fnames = {}; // cache function names by tool_call_id between messages
   for (const item of messages) {
     if (item.role === "system") {
       system_instruction = { parts: await transformMsg(item) };
     } else {
       if (item.role === "assistant") {
         item.role = "model";
+      } else if (item.role === "tool") {
+        const prev = contents[contents.length - 1];
+        if (prev?.role === "function") {
+          prev.parts.push(...await transformMsg(item, fnames));
+          continue;
+        }
+        item.role = "function"; // ignored
       } else if (item.role !== "user") {
         throw new HttpError(`Unknown message role: "${item.role}"`, 400);
       }
       contents.push({
         role: item.role,
-        parts: await transformMsg(item)
+        parts: await transformMsg(item, fnames)
       });
     }
   }
@@ -351,10 +403,32 @@ const transformMessages = async (messages) => {
   return { system_instruction, contents };
 };
 
+const transformTools = (req) => {
+  let tools, tool_config;
+  if (req.tools) {
+    const funcs = req.tools.filter(tool => tool.type === "function");
+    funcs.forEach(adjustSchema);
+    tools = [{ function_declarations: funcs.map(schema => schema.function) }];
+  }
+  if (req.tool_choice) {
+    const allowed_function_names = req.tool_choice?.type === "function" ? [ req.tool_choice?.function?.name ] : undefined;
+    if (allowed_function_names || typeof req.tool_choice === "string") {
+      tool_config = {
+        function_calling_config: {
+          mode: allowed_function_names ? "ANY" : req.tool_choice.toUpperCase(),
+          allowed_function_names
+        }
+      };
+    }
+  }
+  return { tools, tool_config };
+};
+
 const transformRequest = async (req) => ({
   ...await transformMessages(req.messages),
   safetySettings,
   generationConfig: transformConfig(req),
+  ...transformTools(req),
 });
 
 const generateId = () => {
@@ -370,20 +444,33 @@ const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse
   "SAFETY": "content_filter",
   "RECITATION": "content_filter",
   //"OTHER": "OTHER",
-  // :"function_call",
 };
 const SEP = "\n\n|>";
 const transformCandidates = (key, cand) => {
   const message = { role: "assistant", content: [] };
   for (const part of cand.content?.parts ?? []) {
-    message.content.push(part.text);
+    if (part.functionCall) {
+      const fc = part.functionCall;
+      message.tool_calls = message.tool_calls ?? [];
+      message.tool_calls.push({
+        id: fc.id ?? `{${fc.name}}`,
+        type: "function",
+        function: {
+          name: fc.name,
+          arguments: JSON.stringify(fc.args),
+        }
+      });
+    } else {
+      message.content.push(part.text);
+    }
   }
   message.content = message.content.join(SEP) || null;
   return {
     index: cand.index || 0, // 0-index is absent in new -002 models response
     [key]: message,
     logprobs: null,
-    finish_reason: reasonsMap[cand.finishReason] || cand.finishReason,
+    finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] || cand.finishReason,
+    //original_finish_reason: cand.finishReason,
   };
 };
 const transformCandidatesMessage = transformCandidates.bind(null, "message");

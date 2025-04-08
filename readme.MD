@@ -135,8 +135,7 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
 
 - [x] `chat/completions`
 
-  Currently, most of the parameters that are applicable to both APIs have been implemented,
-  with the exception of function calls.
+  Currently, most of the parameters that are applicable to both APIs have been implemented.
   <details>
 
   - [x] `messages`
@@ -145,9 +144,9 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
           - [x] "system" (=>`system_instruction`)
           - [x] "user"
           - [x] "assistant"
-          - [ ] "tool" (v1beta)
+          - [x] "tool"
       - [ ] `name`
-      - [ ] `tool_calls`
+      - [x] `tool_calls`
   - [x] `model`
   - [x] `frequency_penalty`
   - [ ] `logit_bias`
@@ -167,9 +166,9 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
       - [x] `include_usage`
   - [x] `temperature` (0.0..2.0 for OpenAI, but Gemini supports up to infinity)
   - [x] `top_p`
-  - [ ] `tools` (v1beta)
-  - [ ] `tool_choice` (v1beta)
-  - [ ] `parallel_tool_calls`
+  - [x] `tools`
+  - [x] `tool_choice`
+  - [ ] `parallel_tool_calls` (is always active in Gemini)
 
   </details>
 - [ ] `completions`
