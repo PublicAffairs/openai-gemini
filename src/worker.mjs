@@ -151,16 +151,25 @@ async function handleCompletions (req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
+  let body = await transformRequest(req);
+  switch (true) {
+    case model.endsWith(":search"):
+      model = model.substring(0, model.length - 7);
+      // eslint-disable-next-line no-fallthrough
+    case req.model.endsWith("-search-preview"):
+      body.tools = body.tools || [];
+      body.tools.push({googleSearch: {}});
+  }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
   const response = await fetch(url, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify(await transformRequest(req)), // try
+    body: JSON.stringify(body),
   });
 
-  let body = response.body;
+  body = response.body;
   if (response.ok) {
     let id = "chatcmpl-" + generateId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
     if (req.stream) {

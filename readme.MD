@@ -120,6 +120,14 @@ or "models/". Otherwise, these defaults apply:
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
 
 
+## Built-in tools
+
+To use the **web search** tool, append ":search" to the model name
+(e.g., "gemini-2.0-flash:search").
+
+Note: The `annotations` message property is not implemented.
+
+
 ## Media
 
 [Vision] and [audio] input supported as per OpenAI [specs].
