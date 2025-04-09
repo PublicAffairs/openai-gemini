@@ -514,8 +514,27 @@ const transformUsage = (data) => ({
   total_tokens: data.totalTokenCount
 });
 
+const checkPromptBlock = (choices, promptFeedback, key) => {
+  if (choices.length) { return; }
+  if (promptFeedback?.blockReason) {
+    console.log("Prompt block reason:", promptFeedback.blockReason);
+    if (promptFeedback.blockReason === "SAFETY") {
+      promptFeedback.safetyRatings
+        .filter(r => r.blocked)
+        .forEach(r => console.log(r));
+    }
+    choices.push({
+      index: 0,
+      [key]: null,
+      finish_reason: "content_filter",
+      //original_finish_reason: data.promptFeedback.blockReason,
+    });
+  }
+  return true;
+};
+
 const processCompletionsResponse = (data, model, id) => {
-  return JSON.stringify({
+  const obj = {
     id,
     choices: data.candidates.map(transformCandidatesMessage),
     created: Math.floor(Date.now()/1000),
@@ -523,7 +542,11 @@ const processCompletionsResponse = (data, model, id) => {
     //system_fingerprint: "fp_69829325d0",
     object: "chat.completion",
     usage: transformUsage(data.usageMetadata),
-  });
+  };
+  if (obj.choices.length === 0 ) {
+    checkPromptBlock(obj.choices, data.promptFeedback, "message");
+  }
+  return JSON.stringify(obj);
 };
 
 const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
@@ -576,6 +599,10 @@ async function toOpenAiStream (chunk, controller) {
     object: "chat.completion.chunk",
     usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
   };
+  if (checkPromptBlock(obj.choices, data.promptFeedback, "delta")) {
+    controller.enqueue(sseline(obj));
+    return;
+  }
   console.assert(data.candidates.length === 1, "Unexpected candidates count: %d", data.candidates.length);
   const cand = obj.choices[0];
   cand.index = cand.index || 0; // absent in new -002 models response
