@@ -174,6 +174,7 @@ async function handleCompletions (req, apiKey) {
   body = response.body;
   if (response.ok) {
     let id = "chatcmpl-" + generateId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
+    const shared = {};
     if (req.stream) {
       body = response.body
         .pipeThrough(new TextDecoderStream())
@@ -181,17 +182,28 @@ async function handleCompletions (req, apiKey) {
           transform: parseStream,
           flush: parseStreamFlush,
           buffer: "",
+          shared,
         }))
         .pipeThrough(new TransformStream({
           transform: toOpenAiStream,
           flush: toOpenAiStreamFlush,
           streamIncludeUsage: req.stream_options?.include_usage,
           model, id, last: [],
+          shared,
         }))
         .pipeThrough(new TextEncoderStream());
     } else {
       body = await response.text();
-      body = processCompletionsResponse(JSON.parse(body), model, id);
+      try {
+        body = JSON.parse(body);
+        if (!body.candidates) {
+          throw new Error("Invalid completion object");
+        }
+      } catch (err) {
+        console.error("Error parsing response:", err);
+        return new Response(body, fixCors(response)); // output as is
+      }
+      body = processCompletionsResponse(body, model, id);
     }
   }
   return new Response(body, fixCors(response));
@@ -565,6 +577,7 @@ function parseStreamFlush (controller) {
   if (this.buffer) {
     console.error("Invalid data:", this.buffer);
     controller.enqueue(this.buffer);
+    this.shared.is_buffers_rest = true;
   }
 }
 
@@ -577,16 +590,14 @@ function toOpenAiStream (line, controller) {
   let data;
   try {
     data = JSON.parse(line);
+    if (!data.candidates) {
+      throw new Error("Invalid completion chunk object");
+    }
   } catch (err) {
-    console.error(line);
-    console.error(err);
-    const length = this.last.length || 1; // at least 1 error msg
-    const candidates = Array.from({ length }, (_, index) => ({
-      finishReason: "error",
-      content: { parts: [{ text: err }] },
-      index,
-    }));
-    data = { candidates };
+    console.error("Error parsing response:", err);
+    if (!this.shared.is_buffers_rest) { line =+ delimiter; }
+    controller.enqueue(line); // output as is
+    return;
   }
   const obj = {
     id: this.id,
