@@ -100,15 +100,17 @@ async function handleEmbeddings (req, apiKey) {
   if (typeof req.model !== "string") {
     throw new HttpError("model is not specified", 400);
   }
-  if (!Array.isArray(req.input)) {
-    req.input = [ req.input ];
-  }
   let model;
   if (req.model.startsWith("models/")) {
     model = req.model;
   } else {
-    req.model = DEFAULT_EMBEDDINGS_MODEL;
+    if (!req.model.startsWith("gemini-")) {
+      req.model = DEFAULT_EMBEDDINGS_MODEL;
+    }
     model = "models/" + req.model;
+  }
+  if (!Array.isArray(req.input)) {
+    req.input = [ req.input ];
   }
   const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
     method: "POST",
