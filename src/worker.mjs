@@ -550,9 +550,7 @@ const processCompletionsResponse = (data, model, id) => {
 };
 
 const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
-async function parseStream (chunk, controller) {
-  chunk = await chunk;
-  if (!chunk) { return; }
+function parseStream (chunk, controller) {
   this.buffer += chunk;
   do {
     const match = this.buffer.match(responseLineRE);
@@ -561,7 +559,7 @@ async function parseStream (chunk, controller) {
     this.buffer = this.buffer.substring(match[0].length);
   } while (true); // eslint-disable-line no-constant-condition
 }
-async function parseStreamFlush (controller) {
+function parseStreamFlush (controller) {
   if (this.buffer) {
     console.error("Invalid data:", this.buffer);
     controller.enqueue(this.buffer);
@@ -573,9 +571,7 @@ const sseline = (obj) => {
   obj.created = Math.floor(Date.now()/1000);
   return "data: " + JSON.stringify(obj) + delimiter;
 };
-async function toOpenAiStream (chunk, controller) {
-  const line = await chunk;
-  if (!line) { return; }
+function toOpenAiStream (line, controller) {
   let data;
   try {
     data = JSON.parse(line);
@@ -625,7 +621,7 @@ async function toOpenAiStream (chunk, controller) {
   cand.delta = {};
   this.last[cand.index] = obj;
 }
-async function toOpenAiStreamFlush (controller) {
+function toOpenAiStreamFlush (controller) {
   if (this.last.length > 0) {
     for (const obj of this.last) {
       controller.enqueue(sseline(obj));
