@@ -442,8 +442,10 @@ const transformMessages = async (messages) => {
       parts: item.tool_calls ? transformFnCalls(item) : await transformMsg(item)
     });
   }
-  if (system_instruction && contents.length === 0) {
-    contents.push({ role: "model", parts: { text: " " } });
+  if (system_instruction) {
+    if (!contents[0]?.parts.some(part => part.text)) {
+      contents.unshift({ role: "user", parts: { text: " " } });
+    }
   }
   //console.info(JSON.stringify(contents, 2));
   return { system_instruction, contents };
