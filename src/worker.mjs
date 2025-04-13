@@ -380,26 +380,30 @@ const transformMessages = async (messages) => {
   let system_instruction;
   const calls = []; // cache tools call info between messages
   for (const item of messages) {
-    if (item.role === "system") {
-      system_instruction = { parts: await transformMsg(item) };
-    } else {
-      if (item.role === "assistant") {
-        item.role = "model";
-      } else if (item.role === "tool") {
-        const prev = contents[contents.length - 1];
-        if (prev?.role === "function") {
-          prev.parts.push(...await transformMsg(item, calls, prev.parts.length));
+    switch (item.role) {
+      case "system":
+        system_instruction = { parts: await transformMsg(item) };
+        continue;
+      case "tool":
+        item.role = "function"; // ignored
+        const { role, parts } = contents[contents.length - 1] ?? {}; // eslint-disable-line no-case-declarations
+        if (role === "function") {
+          parts.push(...await transformMsg(item, calls, parts.length));
           continue;
         }
-        item.role = "function"; // ignored
-      } else if (item.role !== "user") {
+        break;
+      case "assistant":
+        item.role = "model";
+        break;
+      case "user":
+        break;
+      default:
         throw new HttpError(`Unknown message role: "${item.role}"`, 400);
-      }
-      contents.push({
-        role: item.role,
-        parts: await transformMsg(item, calls, 0)
-      });
     }
+    contents.push({
+      role: item.role,
+      parts: await transformMsg(item, calls, 0)
+    });
   }
   if (system_instruction && contents.length === 0) {
     contents.push({ role: "model", parts: { text: " " } });
