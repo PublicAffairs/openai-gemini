@@ -287,7 +287,7 @@ const parseImg = async (url) => {
   };
 };
 
-const transformMsg = async ({ content, tool_calls, tool_call_id }, fnames) => {
+const transformMsg = async ({ content, tool_calls, tool_call_id }, calls, i) => {
   const parts = [];
   if (tool_call_id !== undefined) {
     let response;
@@ -300,10 +300,15 @@ const transformMsg = async ({ content, tool_calls, tool_call_id }, fnames) => {
     if (typeof response !== "object" || response === null || Array.isArray(response)) {
       response = { result: response };
     }
+    const [id,name] = calls[i];
+    if (id !== tool_call_id) {
+      console.error("Function call id mismatch:", id, tool_call_id);
+      throw new HttpError("Function call id mismatch", 400);
+    }
     parts.push({
       functionResponse: {
-        id: tool_call_id.startsWith("{") ? null : tool_call_id,
-        name: fnames[tool_call_id],
+        id: tool_call_id.startsWith("call_") ? null : tool_call_id,
+        name,
         response,
       }
     });
@@ -324,12 +329,12 @@ const transformMsg = async ({ content, tool_calls, tool_call_id }, fnames) => {
       }
       parts.push({
         functionCall: {
-          id: id.startsWith("{") ? null : id,
+          id: id.startsWith("call_") ? null : id,
           name,
           args,
         }
       });
-      fnames[id] = name;
+      calls.push([id,name]);
     }
     return parts;
   }
@@ -373,7 +378,7 @@ const transformMessages = async (messages) => {
   if (!messages) { return; }
   const contents = [];
   let system_instruction;
-  const fnames = {}; // cache function names by tool_call_id between messages
+  const calls = []; // cache tools call info between messages
   for (const item of messages) {
     if (item.role === "system") {
       system_instruction = { parts: await transformMsg(item) };
@@ -383,7 +388,7 @@ const transformMessages = async (messages) => {
       } else if (item.role === "tool") {
         const prev = contents[contents.length - 1];
         if (prev?.role === "function") {
-          prev.parts.push(...await transformMsg(item, fnames));
+          prev.parts.push(...await transformMsg(item, calls, prev.parts.length));
           continue;
         }
         item.role = "function"; // ignored
@@ -392,7 +397,7 @@ const transformMessages = async (messages) => {
       }
       contents.push({
         role: item.role,
-        parts: await transformMsg(item, fnames)
+        parts: await transformMsg(item, calls, 0)
       });
     }
   }
@@ -453,7 +458,7 @@ const transformCandidates = (key, cand) => {
       const fc = part.functionCall;
       message.tool_calls = message.tool_calls ?? [];
       message.tool_calls.push({
-        id: fc.id ?? `{${fc.name}}`,
+        id: fc.id ?? "call_" + generateId(),
         type: "function",
         function: {
           name: fc.name,
