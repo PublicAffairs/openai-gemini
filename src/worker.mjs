@@ -240,15 +240,16 @@ const safetySettings = harmCategory.map(category => ({
   threshold: "BLOCK_NONE",
 }));
 const fieldsMap = {
-  stop: "stopSequences",
-  n: "candidateCount", // not for streaming
-  max_tokens: "maxOutputTokens",
-  max_completion_tokens: "maxOutputTokens",
-  temperature: "temperature",
-  top_p: "topP",
-  top_k: "topK", // non-standard
   frequency_penalty: "frequencyPenalty",
+  max_completion_tokens: "maxOutputTokens",
+  max_tokens: "maxOutputTokens",
+  n: "candidateCount", // not for streaming
   presence_penalty: "presencePenalty",
+  seed: "seed",
+  stop: "stopSequences",
+  temperature: "temperature",
+  top_k: "topK", // non-standard
+  top_p: "topP",
 };
 const transformConfig = (req) => {
   let cfg = {};

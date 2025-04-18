@@ -167,7 +167,7 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
       - [x] "json_object"
       - [x] "json_schema" (a select subset of an OpenAPI 3.0 schema object)
       - [x] "text"
-  - [ ] `seed`
+  - [x] `seed`
   - [x] `stop`: string|array (`stopSequences` [1,5])
   - [x] `stream`
   - [x] `stream_options`
