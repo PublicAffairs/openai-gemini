@@ -43,6 +43,7 @@ export default {
 
         default:
           // 普通不存在的路由，直接返回 404，不抛异常
+          console.warn(`[404] 来自 ${request.headers.get("x-forwarded-for") || "unknown IP"} 的 ${pathname}`);
           return new Response("Not Found", fixCors({ status: 404 }));
       }
     } catch (err) {
