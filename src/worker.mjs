@@ -2,17 +2,6 @@ import { Buffer } from "node:buffer";
 
 export default {
   async fetch(request) {
-    const { pathname } = new URL(request.url);
-
-    // 只拦截 /api/ 下的请求，其他路径静默返回 204，避免日志噪声
-    if (!pathname.startsWith("/api/")) {
-      return new Response(null, {
-        status: 204,
-        headers: { "Access-Control-Allow-Origin": "*" },
-      });
-    }
-
-    // CORS 预检
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -38,6 +27,7 @@ export default {
         }
       };
 
+      const { pathname } = new URL(request.url);
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
@@ -52,7 +42,7 @@ export default {
           return handleModels(apiKey).catch(errHandler);
 
         default:
-          // API 下其他不存在的路由，返回 404，不抛异常
+          // 普通不存在的路由，直接返回 404，不抛异常
           console.warn(`[404] 来自 ${request.headers.get("x-forwarded-for") || "unknown IP"} 的 ${pathname}`);
           return new Response("Not Found", fixCors({ status: 404 }));
       }
