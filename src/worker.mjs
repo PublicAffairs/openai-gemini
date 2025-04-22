@@ -2,11 +2,36 @@ import { Buffer } from "node:buffer";
 
 export default {
   async fetch(request) {
+    const { pathname } = new URL(request.url);
+
+    // 定义所有的“真实”API 路由
+    const apiRoutes = [
+      "/chat/completions",
+      "/embeddings",
+      "/models",
+    ];
+
+    // --- CORS 预检 ---
     if (request.method === "OPTIONS") {
-      return handleOPTIONS();
+      // 只有真正要处理的 API 路径才回复 CORS 头，其它一律 204
+      if (apiRoutes.some(route => pathname.endsWith(route))) {
+        return handleOPTIONS();
+      }
+      return new Response(null, {
+        status: 204,
+        headers: { "Access-Control-Allow-Origin": "*" },
+      });
     }
 
-    // 只对 5xx 打 error log，404 及 4xx 不输出堆栈
+    // --- 非 API 路由 静默返回 204 ---
+    if (!apiRoutes.some(route => pathname.endsWith(route))) {
+      return new Response(null, {
+        status: 204,
+        headers: { "Access-Control-Allow-Origin": "*" },
+      });
+    }
+
+    // --- 真正的 API 逻辑 ---
     const errHandler = (err) => {
       const status = err.status ?? 500;
       if (status >= 500) {
@@ -17,9 +42,9 @@ export default {
 
     try {
       const auth = request.headers.get("Authorization");
-      const apiKey = auth?.split(" ")[1];
-      const assert = (success) => {
-        if (!success) {
+      const apiKey = auth?.split(" ")[1] || "";
+      const assert = (ok) => {
+        if (!ok) {
           throw new HttpError(
             "The specified HTTP method is not allowed for the requested resource",
             400
@@ -27,7 +52,6 @@ export default {
         }
       };
 
-      const { pathname } = new URL(request.url);
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
@@ -42,7 +66,7 @@ export default {
           return handleModels(apiKey).catch(errHandler);
 
         default:
-          // 普通不存在的路由，直接返回 404，不抛异常
+          // 走不到这里，因为前面已经过滤过路径
           console.warn(`[404] 来自 ${request.headers.get("x-forwarded-for") || "unknown IP"} 的 ${pathname}`);
           return new Response("Not Found", fixCors({ status: 404 }));
       }
@@ -66,7 +90,7 @@ const fixCors = ({ headers, status, statusText }) => {
   return { headers, status, statusText };
 };
 
-const handleOPTIONS = async () => {
+const handleOPTIONS = () => {
   return new Response(null, {
     headers: {
       "Access-Control-Allow-Origin": "*",
@@ -80,61 +104,48 @@ const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 const API_CLIENT = "genai-js/0.21.0";
 
-const makeHeaders = (apiKey, more) => ({
+const makeHeaders = (apiKey, more = {}) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more,
 });
 
 async function handleModels(apiKey) {
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
+  const resp = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
     headers: makeHeaders(apiKey),
   });
-  let { body } = response;
-  if (response.ok) {
-    const { models } = JSON.parse(await response.text());
-    body = JSON.stringify(
-      {
-        object: "list",
-        data: models.map(({ name }) => ({
-          id: name.replace("models/", ""),
-          object: "model",
-          created: 0,
-          owned_by: "",
-        })),
-      },
-      null,
-      "  "
-    );
+  let body = resp.body;
+  if (resp.ok) {
+    const { models } = JSON.parse(await resp.text());
+    body = JSON.stringify({
+      object: "list",
+      data: models.map(({ name }) => ({
+        id: name.replace("models/", ""),
+        object: "model",
+        created: 0,
+        owned_by: "",
+      })),
+    }, null, 2);
   }
-  return new Response(body, fixCors(response));
+  return new Response(body, fixCors(resp));
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
 async function handleEmbeddings(req, apiKey) {
-  if (typeof req.model !== "string") {
-    throw new HttpError("model is not specified", 400);
-  }
-  if (!Array.isArray(req.input)) {
-    req.input = [req.input];
-  }
+  if (typeof req.model !== "string") throw new HttpError("model is not specified", 400);
+  if (!Array.isArray(req.input)) req.input = [req.input];
 
-  let model;
-  if (req.model.startsWith("models/")) {
-    model = req.model;
-  } else {
-    req.model = DEFAULT_EMBEDDINGS_MODEL;
-    model = "models/" + req.model;
-  }
+  let modelName = req.model.startsWith("models/") ? req.model : `models/${DEFAULT_EMBEDDINGS_MODEL}`;
+  req.model = modelName.replace("models/", "");
 
-  const response = await fetch(
-    `${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`,
+  const resp = await fetch(
+    `${BASE_URL}/${API_VERSION}/${modelName}:batchEmbedContents`,
     {
       method: "POST",
       headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
       body: JSON.stringify({
-        requests: req.input.map((text) => ({
-          model,
+        requests: req.input.map(text => ({
+          model: modelName,
           content: { parts: { text } },
           outputDimensionality: req.dimensions,
         })),
@@ -142,76 +153,60 @@ async function handleEmbeddings(req, apiKey) {
     }
   );
 
-  let { body } = response;
-  if (response.ok) {
-    const { embeddings } = JSON.parse(await response.text());
-    body = JSON.stringify(
-      {
-        object: "list",
-        data: embeddings.map(({ values }, index) => ({
-          object: "embedding",
-          index,
-          embedding: values,
-        })),
-        model: req.model,
-      },
-      null,
-      "  "
-    );
+  let body = resp.body;
+  if (resp.ok) {
+    const { embeddings } = JSON.parse(await resp.text());
+    body = JSON.stringify({
+      object: "list",
+      data: embeddings.map(({ values }, i) => ({
+        object: "embedding",
+        index: i,
+        embedding: values,
+      })),
+      model: req.model,
+    }, null, 2);
   }
-  return new Response(body, fixCors(response));
+  return new Response(body, fixCors(resp));
 }
 
 const DEFAULT_MODEL = "gemini-1.5-pro-latest";
 async function handleCompletions(req, apiKey) {
   let model = DEFAULT_MODEL;
-  switch (true) {
-    case typeof req.model !== "string":
-      break;
-    case req.model.startsWith("models/"):
-      model = req.model.substring(7);
-      break;
-    case req.model.startsWith("gemini-"):
-    case req.model.startsWith("learnlm-"):
-      model = req.model;
+  if (typeof req.model === "string") {
+    if (req.model.startsWith("models/")) model = req.model.slice(7);
+    else if (/^(gemini|learnlm)-/.test(req.model)) model = req.model;
   }
 
-  const TASK = req.stream ? "streamGenerateContent" : "generateContent";
-  let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
+  const task = req.stream ? "streamGenerateContent" : "generateContent";
+  let url = `${BASE_URL}/${API_VERSION}/models/${model}:${task}`;
   if (req.stream) url += "?alt=sse";
 
-  const response = await fetch(url, {
+  const resp = await fetch(url, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify(await transformRequest(req)),
   });
 
-  let body = response.body;
-  if (response.ok) {
-    let id = generateChatcmplId();
+  let body = resp.body;
+  if (resp.ok) {
+    const id = generateChatcmplId();
     if (req.stream) {
-      body = response.body
+      body = resp.body
         .pipeThrough(new TextDecoderStream())
-        .pipeThrough(
-          new TransformStream({ transform: parseStream, flush: parseStreamFlush, buffer: "" })
-        )
-        .pipeThrough(
-          new TransformStream({
-            transform: toOpenAiStream,
-            flush: toOpenAiStreamFlush,
-            streamIncludeUsage: req.stream_options?.include_usage,
-            model,
-            id,
-            last: [],
-          })
-        )
+        .pipeThrough(new TransformStream({ transform: parseStream, flush: parseStreamFlush, buffer: "" }))
+        .pipeThrough(new TransformStream({
+          transform: toOpenAiStream,
+          flush: toOpenAiStreamFlush,
+          streamIncludeUsage: req.stream_options?.include_usage,
+          model, id, last: [],
+        }))
         .pipeThrough(new TextEncoderStream());
     } else {
-      body = await response.text();
-      body = processCompletionsResponse(JSON.parse(body), model, id);
+      const data = JSON.parse(await resp.text());
+      body = processCompletionsResponse(data, model, id);
     }
   }
-  return new Response(body, fixCors(response));
+  return new Response(body, fixCors(resp));
 }
 
 const harmCategory = [
