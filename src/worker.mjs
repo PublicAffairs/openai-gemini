@@ -250,6 +250,7 @@ const fieldsMap = {
   temperature: "temperature",
   top_k: "topK", // non-standard
   top_p: "topP",
+  responseModalities: "responseModalities", // ["TEXT","IMAGE"]
 };
 const transformConfig = (req) => {
   let cfg = {};
