@@ -570,6 +570,7 @@ const processCompletionsResponse = (data, model, id) => {
         //system_fingerprint: "fp_69829325d0",
         object: "chat.completion",
         usage: data.usageMetadata && transformUsage(data.usageMetadata),
+        req: data.req,
     };
     if (obj.choices.length === 0) {
         checkPromptBlock(obj.choices, data.promptFeedback, "message");
