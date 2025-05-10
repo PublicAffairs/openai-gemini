@@ -23,18 +23,15 @@ export default {
             switch (true) {
                 case pathname.endsWith("/chat/completions"):
                     assert(request.method === "POST");
-                    return handleCompletions(await request.json(), apiKey)
-                        // .then(res => handleResponse(res, request))
+                    return handleCompletions(await request.json(), apiKey, request)
                         .catch(errHandler);
                 case pathname.endsWith("/embeddings"):
                     assert(request.method === "POST");
-                    return handleEmbeddings(await request.json(), apiKey)
-                        // .then(res => handleResponse(res, request))
+                    return handleEmbeddings(await request.json(), apiKey, request)
                         .catch(errHandler);
                 case pathname.endsWith("/models"):
                     assert(request.method === "GET");
-                    return handleModels(apiKey)
-                        .then(res => ({ ...res, ip: request.ip }))
+                    return handleModels(apiKey, request)
                         .catch(errHandler);
                 default:
                     throw new HttpError("404 Not Found", 404);
@@ -80,7 +77,7 @@ const makeHeaders = (apiKey, more) => ({
     ...more
 });
 
-async function handleModels(apiKey) {
+async function handleModels(apiKey, request) {
     const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
         headers: makeHeaders(apiKey),
     });
@@ -95,13 +92,14 @@ async function handleModels(apiKey) {
                 created: 0,
                 owned_by: "",
             })),
+            req: handleResponseBody(request),
         }, null, "  ");
     }
     return new Response(body, fixCors(response));
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
-async function handleEmbeddings(req, apiKey) {
+async function handleEmbeddings(req, apiKey, request) {
     if (typeof req.model !== "string") {
         throw new HttpError("model is not specified", 400);
     }
@@ -139,13 +137,14 @@ async function handleEmbeddings(req, apiKey) {
                 embedding: values,
             })),
             model: req.model,
+            req: handleResponseBody(request),
         }, null, "  ");
     }
     return new Response(body, fixCors(response));
 }
 
 const DEFAULT_MODEL = "gemini-2.0-flash";
-async function handleCompletions(req, apiKey) {
+async function handleCompletions(req, apiKey, request) {
     let model = DEFAULT_MODEL;
     switch (true) {
         case typeof req.model !== "string":
@@ -200,7 +199,7 @@ async function handleCompletions(req, apiKey) {
         } else {
             body = await response.text();
             try {
-                body = JSON.parse(body);
+                body = { ...JSON.parse(body), req: handleResponseBody(request) };
                 if (!body.candidates) {
                     throw new Error("Invalid completion object");
                 }
@@ -288,7 +287,7 @@ const transformConfig = (req) => {
     }
 
     if (!req.response_modalities && req.model.includes('image')) {
-        cfg['response_modalities'] = ["TEXT","IMAGE"]
+        cfg['response_modalities'] = ["TEXT", "IMAGE"]
     }
     return cfg;
 };
@@ -657,7 +656,8 @@ function toOpenAiStreamFlush(controller) {
         controller.enqueue("data: [DONE]" + delimiter);
     }
 }
-function handleResponse(res, req) {
+
+function handleResponseBody(req) {
     const ip = req.ip || req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip");
-    return { ...res, ip }
+    return { ip }
 }
