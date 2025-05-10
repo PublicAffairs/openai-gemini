@@ -34,7 +34,7 @@ export default {
                 case pathname.endsWith("/models"):
                     assert(request.method === "GET");
                     return handleModels(apiKey)
-                        .then(res => handleResponse(res, request))
+                        .then(res => ({ ...res, ip: request.ip }))
                         .catch(errHandler);
                 default:
                     throw new HttpError("404 Not Found", 404);
