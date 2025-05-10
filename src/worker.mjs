@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 export default {
-    async fetch(request) {
+    async fetch(request, env) {
         if (request.method === "OPTIONS") {
             return handleOPTIONS();
         }
@@ -10,6 +10,10 @@ export default {
             console.error(err);
             return new Response(err.message, fixCors({ status: err.status ?? 500 }));
         };
+
+        if (!isWhiteIp(env, request)) {
+            return errHandler(new HttpError("IP not allowed", 403));
+        }
 
         try {
             const auth = request.headers.get("Authorization");
@@ -657,8 +661,14 @@ function toOpenAiStreamFlush(controller) {
         controller.enqueue("data: [DONE]" + delimiter);
     }
 }
-
 function handleResponseBody(req) {
-    const ip = req.ip || req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip");
+    const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || req.ip;
     return { ip }
+}
+function isWhiteIp(env, request) {
+    const WHITE_IP_LIST = env.WHITE_IP_LIST?.split(",") ?? [];
+    if (WHITE_IP_LIST.length === 0) { return true; }
+
+    const { ip } = handleResponseBody(request);
+    return WHITE_IP_LIST.includes(ip);
 }
