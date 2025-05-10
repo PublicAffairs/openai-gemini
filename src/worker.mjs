@@ -24,17 +24,17 @@ export default {
                 case pathname.endsWith("/chat/completions"):
                     assert(request.method === "POST");
                     return handleCompletions(await request.json(), apiKey)
-                        .then(res => handleResponse(res, request))
+                        // .then(res => handleResponse(res, request))
                         .catch(errHandler);
                 case pathname.endsWith("/embeddings"):
                     assert(request.method === "POST");
                     return handleEmbeddings(await request.json(), apiKey)
-                        .then(res => handleResponse(res, request))
+                        // .then(res => handleResponse(res, request))
                         .catch(errHandler);
                 case pathname.endsWith("/models"):
                     assert(request.method === "GET");
                     return handleModels(apiKey)
-                        .then(res => handleResponse(res, request))
+                        // .then(res => handleResponse(res, request))
                         .catch(errHandler);
                 default:
                     throw new HttpError("404 Not Found", 404);
