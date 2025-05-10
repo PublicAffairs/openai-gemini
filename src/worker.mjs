@@ -2,6 +2,8 @@ import { Buffer } from "node:buffer";
 
 export default {
     async fetch(request, env) {
+        request.__env = env;
+
         if (request.method === "OPTIONS") {
             return handleOPTIONS();
         }
@@ -663,7 +665,7 @@ function toOpenAiStreamFlush(controller) {
 }
 function handleResponseBody(req) {
     const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || req.ip;
-    return { ip }
+    return { ip, env: req.__env }
 }
 function isWhiteIp(env, request) {
     const WHITE_IP_LIST = env.WHITE_IP_LIST?.split(",") ?? [];
