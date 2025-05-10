@@ -34,7 +34,7 @@ export default {
                 case pathname.endsWith("/models"):
                     assert(request.method === "GET");
                     return handleModels(apiKey)
-                        // .then(res => handleResponse(res, request))
+                        .then(res => handleResponse(res, request))
                         .catch(errHandler);
                 default:
                     throw new HttpError("404 Not Found", 404);
@@ -657,8 +657,6 @@ function toOpenAiStreamFlush(controller) {
         controller.enqueue("data: [DONE]" + delimiter);
     }
 }
-
-
 function handleResponse(res, req) {
     const ip = req.ip || req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip");
     return { ...res, ip }
