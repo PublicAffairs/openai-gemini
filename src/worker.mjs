@@ -10,8 +10,24 @@ export default {
       return new Response(err.message, fixCors({ status: err.status ?? 500 }));
     };
     try {
-      const auth = request.headers.get("Authorization");
-      const apiKey = auth?.split(" ")[1];
+// 修改后的代码:
+try {
+  // const auth = request.headers.get("Authorization"); // 注释掉或删除这一行
+  // const apiKey = auth?.split(" ")[1];              // 注释掉或删除这一行
+
+  // 从 Vercel 环境变量中读取 API 密钥。
+  // 在 Vercel Edge Functions 中，您在项目设置中定义的环境变量通常可以直接作为全局常量使用。
+  // 假设您在 Vercel 中设置的环境变量名为 GEMINI_API_KEY_FOR_PROXY
+  const apiKey = GEMINI_API_KEY_FOR_PROXY;
+
+  // 最好检查一下密钥是否成功加载
+  if (!apiKey) {
+    console.error("错误：环境变量 GEMINI_API_KEY_FOR_PROXY 未在 Vercel 中设置。");
+    // 返回一个错误响应给客户端
+    return new Response("代理服务的 API 密钥未配置。", { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }); // 添加 CORS 头以便调试
+  }
+
+  // ... 后续代码（如 const assert = ... 等）保持不变，它们会继续使用这个从环境变量中获取的 apiKey
       const assert = (success) => {
         if (!success) {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
