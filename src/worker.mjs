@@ -225,6 +225,7 @@ const adjustProps = (schemaPart) => {
 const adjustSchema = (schema) => {
   const obj = schema[schema.type];
   delete obj.strict;
+  delete obj.parameters.$schema;
   return adjustProps(schema);
 };
 
