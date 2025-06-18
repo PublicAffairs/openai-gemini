@@ -384,12 +384,37 @@ const transformMsg = async ({ content }) => {
   // Can contain text, image, or audio inputs.
   for (const item of content) {
     switch (item.type) {
+      case "input_text": // Fall through to "text"
       case "text":
         parts.push({ text: item.text });
         break;
       case "image_url":
         parts.push(await parseImg(item.image_url.url));
         break;
+      case "input_file": { // New case for PDF and other files
+        let fileDataUri = item.file_data;
+
+        // 检查 file_data 是否为 Data URI 格式。如果不是，则假定其为 PDF 文件的原始 base64 字符串。
+        // Check if file_data is a Data URI. If not, assume it's a raw base64 string for a PDF file.
+        if (!fileDataUri.startsWith("data:")) {
+          fileDataUri = `data:application/pdf;base64,${item.file_data}`;
+        }
+
+        // 现在，fileDataUri 必定是 Data URI 格式，继续执行解析
+        // Now, fileDataUri is a Data URI, so proceed with parsing.
+        const match = fileDataUri.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
+        if (!match) {
+          throw new HttpError(`Invalid file_data format. Expected a full Data URI or a raw base64 string.`, 400);
+        }
+        const { mimeType, data } = match.groups;
+        parts.push({
+          inlineData: {
+            mimeType,
+            data,
+          },
+        });
+        break;
+      }
       case "input_audio":
         parts.push({
           inlineData: {
