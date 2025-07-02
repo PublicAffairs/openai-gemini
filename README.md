@@ -178,6 +178,7 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `tools`
   - [x] `tool_choice`
   - [ ] `parallel_tool_calls` (is always active in Gemini)
+  - [x] [`extra_body`](https://ai.google.dev/gemini-api/docs/openai#extra-body)
 
   </details>
 - [ ] `completions`

@@ -154,6 +154,18 @@ async function handleCompletions (req, apiKey) {
       model = req.model;
   }
   let body = await transformRequest(req);
+  const extra = req.extra_body?.google
+  if (extra) {
+    if (extra.safety_settings) {
+      body.safetySettings = extra.safety_settings;
+    }
+    if (extra.cached_content) {
+      body.cachedContent = extra.cached_content;
+    }
+    if (extra.thinking_config) {
+      body.generationConfig.thinkingConfig = extra.thinking_config;
+    }
+  }
   switch (true) {
     case model.endsWith(":search"):
       model = model.substring(0, model.length - 7);
