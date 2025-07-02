@@ -251,6 +251,11 @@ const fieldsMap = {
   top_k: "topK", // non-standard
   top_p: "topP",
 };
+const thinkingBudgetMap = {
+  low: 1024,
+  medium: 8192,
+  high: 24576,
+};
 const transformConfig = (req) => {
   let cfg = {};
   //if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
@@ -279,6 +284,9 @@ const transformConfig = (req) => {
       default:
         throw new HttpError("Unsupported response_format.type", 400);
     }
+  }
+  if (req.reasoning_effort) {
+    cfg.thinkingConfig = { thinkingBudget: thinkingBudgetMap[req.reasoning_effort] };
   }
   return cfg;
 };

@@ -163,6 +163,7 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `max_tokens`, `max_completion_tokens`
   - [x] `n` (`candidateCount` <8, not for streaming)
   - [x] `presence_penalty`
+  - [x] `reasoning_effort`
   - [x] `response_format`
       - [x] "json_object"
       - [x] "json_schema" (a select subset of an OpenAPI 3.0 schema object)
