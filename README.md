@@ -114,7 +114,7 @@ OPENAI_API_BASE="https://my-super-proxy.vercel.app/v1"
 Requests use the specified [model] if its name starts with "gemini-", "gemma-", "learnlm-", 
 or "models/". Otherwise, these defaults apply:
 
-- `chat/completions`: `gemini-2.0-flash`
+- `chat/completions`: `gemini-2.5-flash`
 - `embeddings`: `text-embedding-004`
 
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
@@ -123,7 +123,7 @@ or "models/". Otherwise, these defaults apply:
 ## Built-in tools
 
 To use the **web search** tool, append ":search" to the model name
-(e.g., "gemini-2.0-flash:search").
+(e.g., "gemini-2.5-flash:search").
 
 Note: The `annotations` message property is not implemented.
 
