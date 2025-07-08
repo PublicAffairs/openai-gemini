@@ -154,7 +154,7 @@ async function handleCompletions (req, apiKey) {
       model = req.model;
   }
   let body = await transformRequest(req);
-  const extra = req.extra_body?.google
+  const extra = req.extra_body?.google;
   if (extra) {
     if (extra.safety_settings) {
       body.safetySettings = extra.safety_settings;
