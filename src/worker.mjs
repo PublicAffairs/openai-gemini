@@ -545,10 +545,24 @@ const transformCandidates = (key, cand) => {
 const transformCandidatesMessage = transformCandidates.bind(null, "message");
 const transformCandidatesDelta = transformCandidates.bind(null, "delta");
 
+const notEmpty = (el) => Object.values(el).some(Boolean) ? el : undefined;
 const transformUsage = (data) => ({
-  completion_tokens: data.candidatesTokenCount,
+  completion_tokens: data.candidatesTokenCount + (data.toolUsePromptTokenCount ?? 0),
   prompt_tokens: data.promptTokenCount,
-  total_tokens: data.totalTokenCount
+  total_tokens: data.totalTokenCount,
+  completion_tokens_details: notEmpty({
+    audio_tokens: data.candidatesTokensDetails
+      ?.find(el => el.modality === "AUDIO")
+      ?.tokenCount,
+    reasoning_tokens: data.thoughtsTokenCount,
+  }),
+  prompt_tokens_details: notEmpty({
+    audio_tokens: data.promptTokensDetails
+      ?.find(el => el.modality === "AUDIO")
+      ?.tokenCount,
+    cached_tokens: data.cacheTokensDetails
+      ?.reduce((acc,el) => acc + el.tokenCount, 0),
+  }),
 });
 
 const checkPromptBlock = (choices, promptFeedback, key) => {
