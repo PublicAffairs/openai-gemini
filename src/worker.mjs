@@ -139,7 +139,7 @@ async function handleEmbeddings (req, apiKey) {
   return new Response(body, fixCors(response));
 }
 
-const DEFAULT_MODEL = "gemini-2.0-flash";
+const DEFAULT_MODEL = "gemini-2.5-flash";
 async function handleCompletions (req, apiKey) {
   let model = DEFAULT_MODEL;
   switch (true) {
@@ -154,6 +154,18 @@ async function handleCompletions (req, apiKey) {
       model = req.model;
   }
   let body = await transformRequest(req);
+  const extra = req.extra_body?.google
+  if (extra) {
+    if (extra.safety_settings) {
+      body.safetySettings = extra.safety_settings;
+    }
+    if (extra.cached_content) {
+      body.cachedContent = extra.cached_content;
+    }
+    if (extra.thinking_config) {
+      body.generationConfig.thinkingConfig = extra.thinking_config;
+    }
+  }
   switch (true) {
     case model.endsWith(":search"):
       model = model.substring(0, model.length - 7);
@@ -251,6 +263,11 @@ const fieldsMap = {
   top_k: "topK", // non-standard
   top_p: "topP",
 };
+const thinkingBudgetMap = {
+  low: 1024,
+  medium: 8192,
+  high: 24576,
+};
 const transformConfig = (req) => {
   let cfg = {};
   //if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
@@ -279,6 +296,9 @@ const transformConfig = (req) => {
       default:
         throw new HttpError("Unsupported response_format.type", 400);
     }
+  }
+  if (req.reasoning_effort) {
+    cfg.thinkingConfig = { thinkingBudget: thinkingBudgetMap[req.reasoning_effort] };
   }
   return cfg;
 };

@@ -114,7 +114,7 @@ OPENAI_API_BASE="https://my-super-proxy.vercel.app/v1"
 Requests use the specified [model] if its name starts with "gemini-", "gemma-", "learnlm-", 
 or "models/". Otherwise, these defaults apply:
 
-- `chat/completions`: `gemini-2.0-flash`
+- `chat/completions`: `gemini-2.5-flash`
 - `embeddings`: `text-embedding-004`
 
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
@@ -123,7 +123,7 @@ or "models/". Otherwise, these defaults apply:
 ## Built-in tools
 
 To use the **web search** tool, append ":search" to the model name
-(e.g., "gemini-2.0-flash:search").
+(e.g., "gemini-2.5-flash:search").
 
 Note: The `annotations` message property is not implemented.
 
@@ -163,6 +163,7 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `max_tokens`, `max_completion_tokens`
   - [x] `n` (`candidateCount` <8, not for streaming)
   - [x] `presence_penalty`
+  - [x] `reasoning_effort`
   - [x] `response_format`
       - [x] "json_object"
       - [x] "json_schema" (a select subset of an OpenAPI 3.0 schema object)
@@ -177,6 +178,7 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `tools`
   - [x] `tool_choice`
   - [ ] `parallel_tool_calls` (is always active in Gemini)
+  - [x] [`extra_body`](https://ai.google.dev/gemini-api/docs/openai#extra-body)
 
   </details>
 - [ ] `completions`
