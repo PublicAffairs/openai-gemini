@@ -23,6 +23,13 @@ export default {
           assert(request.method === "POST");
           return handleCompletions(await request.json(), apiKey)
             .catch(errHandler);
+        // =================================================================
+        // ==================== 新增 /audio/speech 路由 ====================
+        // =================================================================
+        case pathname.endsWith("/audio/speech"):
+          assert(request.method === "POST");
+          return handleSpeech(await request.json(), apiKey)
+              .catch(errHandler);
         case pathname.endsWith("/embeddings"):
           assert(request.method === "POST");
           return handleEmbeddings(await request.json(), apiKey)
@@ -48,11 +55,17 @@ class HttpError extends Error {
   }
 }
 
+// 修改 fixCors 以便在不覆盖的情况下设置 Content-Type
 const fixCors = ({ headers, status, statusText }) => {
   headers = new Headers(headers);
   headers.set("Access-Control-Allow-Origin", "*");
+  // 仅当 Content-Type 未设置时才设置为 application/json
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   return { headers, status, statusText };
 };
+
 
 const handleOPTIONS = async () => {
   return new Response(null, {
@@ -67,7 +80,6 @@ const handleOPTIONS = async () => {
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
-// https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
 const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
@@ -75,6 +87,7 @@ const makeHeaders = (apiKey, more) => ({
   ...more
 });
 
+// ... handleModels and handleEmbeddings 函数保持不变 ...
 async function handleModels (apiKey) {
   const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
     headers: makeHeaders(apiKey),
@@ -94,7 +107,6 @@ async function handleModels (apiKey) {
   }
   return new Response(body, fixCors(response));
 }
-
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
 async function handleEmbeddings (req, apiKey) {
   if (typeof req.model !== "string") {
@@ -139,8 +151,249 @@ async function handleEmbeddings (req, apiKey) {
   return new Response(body, fixCors(response));
 }
 
+
+// =================================================================
+// ==================== TTS处理逻辑及WAV头转换 =====================
+// =================================================================
+
+/**
+ * 将原始PCM数据（s16le, 24kHz, 单声道）转换为WAV格式的Buffer
+ * @param {Buffer} pcmData - 原始的PCM数据Buffer
+ * @returns {Buffer} - 包含了WAV头的完整WAV数据Buffer
+ */
+function addWavHeader(pcmData) {
+  const sampleRate = 24000;
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmData.length;
+  const chunkSize = 36 + dataSize;
+
+  const header = Buffer.alloc(44);
+
+  header.write('RIFF', 0);
+  header.writeUInt32LE(chunkSize, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmData]);
+}
+
+// 这个函数是为 /chat/completions 中的TTS保留的，保持不变
+async function handleTts(req, apiKey) {
+  if (!req.messages || req.messages.length === 0) {
+    throw new HttpError("`messages` array is required for TTS.", 400);
+  }
+  if (!req.audio?.voice) {
+    throw new HttpError("`audio.voice` is required for TTS.", 400);
+  }
+
+  const lastMessage = req.messages[req.messages.length - 1];
+  const parts = await transformMsg(lastMessage);
+  const inputText = parts.map(p => p.text).join(' ');
+
+  if (!inputText) {
+    throw new HttpError("A non-empty text message is required for TTS.", 400);
+  }
+
+  const geminiTtsModel = "gemini-2.5-flash-preview-tts";
+
+  const geminiPayload = {
+    model: geminiTtsModel,
+    contents: [{
+      parts: [{ text: inputText }]
+    }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: req.audio.voice
+          }
+        }
+      }
+    },
+  };
+
+  const url = `${BASE_URL}/${API_VERSION}/models/${geminiTtsModel}:generateContent`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+    body: JSON.stringify(geminiPayload),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error("Gemini TTS API Error:", errorBody);
+    return new Response(errorBody, fixCors(response));
+  }
+
+  const geminiResponse = await response.json();
+  const audioDataBase64 = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+  if (!audioDataBase64) {
+    console.error("Could not extract audio data from Gemini response:", JSON.stringify(geminiResponse));
+    throw new HttpError("Failed to generate audio, invalid response from upstream.", 500);
+  }
+
+  const requestedFormat = req.audio.format || 'wav';
+  let finalAudioDataB64 = audioDataBase64;
+  let finalFormat = 'pcm_s16le_24000_mono';
+
+  if (requestedFormat.toLowerCase() === 'wav') {
+    const pcmData = Buffer.from(audioDataBase64, 'base64');
+    const wavData = addWavHeader(pcmData);
+    finalAudioDataB64 = wavData.toString('base64');
+    finalFormat = 'wav';
+  }
+  
+  const openAiResponse = {
+    id: "chatcmpl-tts-" + generateId(),
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: req.model,
+    choices: [{
+      index: 0,
+      message: {
+        role: "assistant",
+        audio: {
+          format: finalFormat,
+          data: finalAudioDataB64,
+          transcript: inputText,
+        }
+      },
+      finish_reason: "stop",
+    }],
+    usage: null,
+  };
+  
+  return new Response(JSON.stringify(openAiResponse, null, 2), fixCors({ headers: response.headers }));
+}
+
+// =================================================================
+// ============== 新增 handleSpeech 函数用于 /audio/speech ===========
+// =================================================================
+
+/**
+ * 处理对 /v1/audio/speech 端点的请求，模拟OpenAI的行为。
+ * @param {object} req - 从客户端收到的OpenAI格式的请求体。
+ * @param {string} apiKey - Gemini API密钥。
+ * @returns {Response} - 一个直接包含音频数据的Response对象。
+ */
+async function handleSpeech(req, apiKey) {
+  // 1. 验证和提取OpenAI风格的输入
+  if (!req.input) {
+    throw new HttpError("`input` field is required.", 400);
+  }
+  if (!req.voice) {
+    throw new HttpError("`voice` field is required.", 400);
+  }
+
+  // 2. 构建Gemini API请求体
+  // 注意：OpenAI的 'model' 字段 (如 gpt-4o-mini-tts) 在这里不直接使用，
+  // 我们硬编码为Gemini的TTS模型。'voice' 字段直接映射。
+  const geminiTtsModel = "gemini-2.5-flash-preview-tts"; 
+  const geminiPayload = {
+    model: geminiTtsModel,
+    contents: [{
+      parts: [{ text: req.input }]
+    }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: req.voice
+          }
+        }
+      }
+    },
+  };
+
+  // 3. 发送请求到Gemini TTS API
+  const url = `${BASE_URL}/${API_VERSION}/models/${geminiTtsModel}:generateContent`;
+  const geminiApiResponse = await fetch(url, {
+    method: "POST",
+    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+    body: JSON.stringify(geminiPayload),
+  });
+
+  if (!geminiApiResponse.ok) {
+    const errorBody = await geminiApiResponse.text();
+    console.error("Gemini TTS API Error:", errorBody);
+    // 返回带有CORS头的错误信息
+    return new Response(errorBody, fixCors({ headers: geminiApiResponse.headers, status: geminiApiResponse.status, statusText: geminiApiResponse.statusText }));
+  }
+
+  // 4. 解析Gemini响应并提取音频数据
+  const geminiResponseJson = await geminiApiResponse.json();
+  const audioDataBase64 = geminiResponseJson.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+  if (!audioDataBase64) {
+    throw new HttpError("Failed to extract audio data from Gemini response.", 500);
+  }
+  
+  const pcmData = Buffer.from(audioDataBase64, 'base64');
+
+  // 5. 根据请求的格式准备最终的音频数据和响应头
+  // OpenAI 默认格式是 'mp3'。
+  const responseFormat = req.response_format || 'mp3';
+  let audioData;
+  let contentType;
+  const corsHeaders = fixCors({}).headers;
+
+  // 重要限制：此代码只能生成 PCM 和 WAV。无法生成 MP3/Opus/AAC/FLAC。
+  // 如果客户端请求了不支持的格式，我们回退到 WAV。
+  switch (responseFormat.toLowerCase()) {
+    case 'wav':
+      audioData = addWavHeader(pcmData);
+      contentType = 'audio/wav';
+      break;
+    case 'pcm':
+      audioData = pcmData;
+      // 提供更详细的PCM Content-Type
+      contentType = 'audio/L16; rate=24000; channels=1';
+      break;
+    case 'mp3':
+    case 'opus':
+    case 'aac':
+    case 'flac':
+    default:
+      // 回退到WAV，因为我们无法在当前环境中编码为MP3等格式
+      audioData = addWavHeader(pcmData);
+      contentType = 'audio/wav';
+      // 添加一个警告头，告知客户端格式已更改
+      corsHeaders.set('X-Warning', `Unsupported format "${responseFormat}" requested, fallback to "wav".`);
+      break;
+  }
+
+  corsHeaders.set('Content-Type', contentType);
+
+  // 6. 返回包含原始音频数据的响应
+  return new Response(audioData, {
+    status: 200,
+    headers: corsHeaders
+  });
+}
+
+
+// ... handleCompletions and all other helper functions remain unchanged ...
 const DEFAULT_MODEL = "gemini-2.5-flash";
 async function handleCompletions (req, apiKey) {
+  const isTtsRequest = Array.isArray(req.modalities) && req.modalities.includes("audio");
+  if (isTtsRequest) {
+    return handleTts(req, apiKey);
+  }
   let model = DEFAULT_MODEL;
   switch (true) {
     case typeof req.model !== "string":
@@ -185,7 +438,7 @@ async function handleCompletions (req, apiKey) {
 
   body = response.body;
   if (response.ok) {
-    let id = "chatcmpl-" + generateId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
+    let id = "chatcmpl-" + generateId();
     const shared = {};
     if (req.stream) {
       body = response.body
@@ -213,7 +466,7 @@ async function handleCompletions (req, apiKey) {
         }
       } catch (err) {
         console.error("Error parsing response:", err);
-        return new Response(body, fixCors(response)); // output as is
+        return new Response(body, fixCors(response));
       }
       body = processCompletionsResponse(body, model, id);
     }
@@ -221,6 +474,7 @@ async function handleCompletions (req, apiKey) {
   return new Response(body, fixCors(response));
 }
 
+// ... (所有 transform* and helper functions, e.g., generateId, transformCandidates, etc., are unchanged)
 const adjustProps = (schemaPart) => {
   if (typeof schemaPart !== "object" || schemaPart === null) {
     return;
@@ -270,7 +524,6 @@ const thinkingBudgetMap = {
 };
 const transformConfig = (req) => {
   let cfg = {};
-  //if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
   for (let key in req) {
     const matchedKey = fieldsMap[key];
     if (matchedKey) {
@@ -286,7 +539,6 @@ const transformConfig = (req) => {
           cfg.responseMimeType = "text/x.enum";
           break;
         }
-        // eslint-disable-next-line no-fallthrough
       case "json_object":
         cfg.responseMimeType = "application/json";
         break;
@@ -393,59 +645,42 @@ const transformFnCalls = ({ tool_calls }) => {
 const transformMsg = async ({ content }) => {
   const parts = [];
   if (!Array.isArray(content)) {
-    // system, user: string
-    // assistant: string or null (Required unless tool_calls is specified.)
     parts.push({ text: content });
     return parts;
   }
-  // user:
-  // An array of content parts with a defined type.
-  // Supported options differ based on the model being used to generate the response.
-  // Can contain text, image, or audio inputs.
   for (const item of content) {
     switch (item.type) {
-      case "input_text": // Fall through to "text"
+      case "input_text":
       case "text":
         parts.push({ text: item.text });
         break;
       case "image_url":
         parts.push(await parseImg(item.image_url.url));
         break;
-      case "input_file": { // New case for PDF and other files
+      case "input_file": {
         let fileDataUri = item.file_data;
         if (!fileDataUri.startsWith("data:")) {
           fileDataUri = `data:application/pdf;base64,${item.file_data}`;
         }
         const match = fileDataUri.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
         if (!match) {
-          throw new HttpError(`Invalid file_data format. Expected a full Data URI or a raw base64 string.`, 400);
+          throw new HttpError(`Invalid file_data format.`, 400);
         }
         const { mimeType, data } = match.groups;
-        parts.push({
-          inlineData: {
-            mimeType,
-            data,
-          },
-        });
+        parts.push({ inlineData: { mimeType, data } });
         break;
       }
-      case "file": { // New case for PDF and other files
+      case "file": {
         let fileDataUri = item.file.file_data;
         if (!fileDataUri.startsWith("data:")) {
           fileDataUri = `data:application/pdf;base64,${item.file_data}`;
         }
-        // 现在，fileDataUri 必定是 Data URI 格式，继续执行解析
         const match = fileDataUri.match(/^data:(?<mimeType>.*?)(;base64)?,(?<data>.*)$/);
         if (!match) {
-          throw new HttpError(`Invalid file_data format. Expected a full Data URI or a raw base64 string.`, 400);
+          throw new HttpError(`Invalid file_data format.`, 400);
         }
         const { mimeType, data } = match.groups;
-        parts.push({
-          inlineData: {
-            mimeType,
-            data,
-          },
-        });
+        parts.push({ inlineData: { mimeType, data } });
         break;
       }
       case "input_audio":
@@ -461,7 +696,7 @@ const transformMsg = async ({ content }) => {
     }
   }
   if (content.every(item => item.type === "image_url")) {
-    parts.push({ text: "" }); // to avoid "Unable to submit request because it must have a text parameter"
+    parts.push({ text: "" });
   }
   return parts;
 };
@@ -476,15 +711,11 @@ const transformMessages = async (messages) => {
         system_instruction = { parts: await transformMsg(item) };
         continue;
       case "tool":
-        // eslint-disable-next-line no-case-declarations
         let { role, parts } = contents[contents.length - 1] ?? {};
         if (role !== "function") {
           const calls = parts?.calls;
           parts = []; parts.calls = calls;
-          contents.push({
-            role: "function", // ignored
-            parts
-          });
+          contents.push({ role: "function", parts });
         }
         transformFnResponse(item, parts);
         continue;
@@ -506,7 +737,6 @@ const transformMessages = async (messages) => {
       contents.unshift({ role: "user", parts: { text: " " } });
     }
   }
-  //console.info(JSON.stringify(contents, 2));
   return { system_instruction, contents };
 };
 
@@ -544,13 +774,11 @@ const generateId = () => {
   return Array.from({ length: 29 }, randomChar).join("");
 };
 
-const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse#finishreason
-  //"FINISH_REASON_UNSPECIFIED": // Default value. This value is unused.
+const reasonsMap = {
   "STOP": "stop",
   "MAX_TOKENS": "length",
   "SAFETY": "content_filter",
   "RECITATION": "content_filter",
-  //"OTHER": "OTHER",
 };
 const SEP = "\n\n|>";
 const transformCandidates = (key, cand) => {
@@ -573,11 +801,10 @@ const transformCandidates = (key, cand) => {
   }
   message.content = message.content.join(SEP) || null;
   return {
-    index: cand.index || 0, // 0-index is absent in new -002 models response
+    index: cand.index || 0,
     [key]: message,
     logprobs: null,
     finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] || cand.finishReason,
-    //original_finish_reason: cand.finishReason,
   };
 };
 const transformCandidatesMessage = transformCandidates.bind(null, "message");
@@ -602,7 +829,6 @@ const checkPromptBlock = (choices, promptFeedback, key) => {
       index: 0,
       [key]: null,
       finish_reason: "content_filter",
-      //original_finish_reason: data.promptFeedback.blockReason,
     });
   }
   return true;
@@ -614,14 +840,13 @@ const processCompletionsResponse = (data, model, id) => {
     choices: data.candidates.map(transformCandidatesMessage),
     created: Math.floor(Date.now()/1000),
     model: data.modelVersion ?? model,
-    //system_fingerprint: "fp_69829325d0",
     object: "chat.completion",
     usage: data.usageMetadata && transformUsage(data.usageMetadata),
   };
   if (obj.choices.length === 0 ) {
     checkPromptBlock(obj.choices, data.promptFeedback, "message");
   }
-  return JSON.stringify(obj);
+  return JSON.stringify(obj, null, 2);
 };
 
 const responseLineRE = /^data: (.*)(?:\n\n|\r\r|\r\n\r\n)/;
@@ -632,7 +857,7 @@ function parseStream (chunk, controller) {
     if (!match) { break; }
     controller.enqueue(match[1]);
     this.buffer = this.buffer.substring(match[0].length);
-  } while (true); // eslint-disable-line no-constant-condition
+  } while (true);
 }
 function parseStreamFlush (controller) {
   if (this.buffer) {
@@ -657,15 +882,13 @@ function toOpenAiStream (line, controller) {
   } catch (err) {
     console.error("Error parsing response:", err);
     if (!this.shared.is_buffers_rest) { line =+ delimiter; }
-    controller.enqueue(line); // output as is
+    controller.enqueue(line);
     return;
   }
   const obj = {
     id: this.id,
     choices: data.candidates.map(transformCandidatesDelta),
-    //created: Math.floor(Date.now()/1000),
     model: data.modelVersion ?? this.model,
-    //system_fingerprint: "fp_69829325d0",
     object: "chat.completion.chunk",
     usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
   };
@@ -675,17 +898,17 @@ function toOpenAiStream (line, controller) {
   }
   console.assert(data.candidates.length === 1, "Unexpected candidates count: %d", data.candidates.length);
   const cand = obj.choices[0];
-  cand.index = cand.index || 0; // absent in new -002 models response
+  cand.index = cand.index || 0;
   const finish_reason = cand.finish_reason;
   cand.finish_reason = null;
-  if (!this.last[cand.index]) { // first
+  if (!this.last[cand.index]) {
     controller.enqueue(sseline({
       ...obj,
       choices: [{ ...cand, tool_calls: undefined, delta: { role: "assistant", content: "" } }],
     }));
   }
   delete cand.delta.role;
-  if ("content" in cand.delta) { // prevent empty data (e.g. when MAX_TOKENS)
+  if ("content" in cand.delta) {
     controller.enqueue(sseline(obj));
   }
   cand.finish_reason = finish_reason;
