@@ -206,7 +206,8 @@ async function handleTts(req, apiKey) {
     throw new HttpError("A non-empty text message is required for TTS.", 400);
   }
 
-  const geminiTtsModel = "gemini-2.5-flash-preview-tts";
+  // 从请求中获取模型，如果未提供则使用默认TTS模型
+  const geminiTtsModel = req.model || "gemini-2.5-flash-preview-tts";
 
   const geminiPayload = {
     model: geminiTtsModel,
@@ -300,9 +301,9 @@ async function handleSpeech(req, apiKey) {
   }
 
   // 2. 构建Gemini API请求体
-  // 注意：OpenAI的 'model' 字段 (如 gpt-4o-mini-tts) 在这里不直接使用，
-  // 我们硬编码为Gemini的TTS模型。'voice' 字段直接映射。
-  const geminiTtsModel = "gemini-2.5-flash-preview-tts"; 
+  // 从OpenAI请求中获取'model'字段，如果未提供，则回退到默认的Gemini TTS模型。
+  // 'voice' 字段直接映射。
+  const geminiTtsModel = req.model || "gemini-2.5-flash-preview-tts"; 
   const geminiPayload = {
     model: geminiTtsModel,
     contents: [{
