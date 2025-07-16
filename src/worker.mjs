@@ -23,9 +23,6 @@ export default {
           assert(request.method === "POST");
           return handleCompletions(await request.json(), apiKey)
             .catch(errHandler);
-        // =================================================================
-        // ==================== 新增 /audio/speech 路由 ====================
-        // =================================================================
         case pathname.endsWith("/audio/speech"):
           assert(request.method === "POST");
           return handleSpeech(await request.json(), apiKey)
@@ -55,11 +52,9 @@ class HttpError extends Error {
   }
 }
 
-// 修改 fixCors 以便在不覆盖的情况下设置 Content-Type
 const fixCors = ({ headers, status, statusText }) => {
   headers = new Headers(headers);
   headers.set("Access-Control-Allow-Origin", "*");
-  // 仅当 Content-Type 未设置时才设置为 application/json
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -80,315 +75,248 @@ const handleOPTIONS = async () => {
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
-const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
+const API_CLIENT = "genai-js/0.21.0";
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
 });
 
-// ... handleModels and handleEmbeddings 函数保持不变 ...
-async function handleModels (apiKey) {
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
-    headers: makeHeaders(apiKey),
-  });
-  let { body } = response;
-  if (response.ok) {
-    const { models } = JSON.parse(await response.text());
-    body = JSON.stringify({
-      object: "list",
-      data: models.map(({ name }) => ({
-        id: name.replace("models/", ""),
-        object: "model",
-        created: 0,
-        owned_by: "",
-      })),
-    }, null, "  ");
-  }
-  return new Response(body, fixCors(response));
+async function handleModels(apiKey) {
+    const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
+        headers: makeHeaders(apiKey),
+    });
+    let { body } = response;
+    if (response.ok) {
+        const { models } = JSON.parse(await response.text());
+        body = JSON.stringify({
+            object: "list",
+            data: models.map(({ name }) => ({
+                id: name.replace("models/", ""),
+                object: "model",
+                created: 0,
+                owned_by: "",
+            })),
+        }, null, "  ");
+    }
+    return new Response(body, fixCors(response));
 }
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
-async function handleEmbeddings (req, apiKey) {
-  if (typeof req.model !== "string") {
-    throw new HttpError("model is not specified", 400);
-  }
-  let model;
-  if (req.model.startsWith("models/")) {
-    model = req.model;
-  } else {
-    if (!req.model.startsWith("gemini-")) {
-      req.model = DEFAULT_EMBEDDINGS_MODEL;
+async function handleEmbeddings(req, apiKey) {
+    if (typeof req.model !== "string") {
+        throw new HttpError("model is not specified", 400);
     }
-    model = "models/" + req.model;
-  }
-  if (!Array.isArray(req.input)) {
-    req.input = [ req.input ];
-  }
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
-    method: "POST",
-    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify({
-      "requests": req.input.map(text => ({
-        model,
-        content: { parts: { text } },
-        outputDimensionality: req.dimensions,
-      }))
-    })
-  });
-  let { body } = response;
-  if (response.ok) {
-    const { embeddings } = JSON.parse(await response.text());
-    body = JSON.stringify({
-      object: "list",
-      data: embeddings.map(({ values }, index) => ({
-        object: "embedding",
-        index,
-        embedding: values,
-      })),
-      model: req.model,
-    }, null, "  ");
-  }
-  return new Response(body, fixCors(response));
+    let model;
+    if (req.model.startsWith("models/")) {
+        model = req.model;
+    } else {
+        if (!req.model.startsWith("gemini-")) {
+            req.model = DEFAULT_EMBEDDINGS_MODEL;
+        }
+        model = "models/" + req.model;
+    }
+    if (!Array.isArray(req.input)) {
+        req.input = [req.input];
+    }
+    const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
+        method: "POST",
+        headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+            "requests": req.input.map(text => ({
+                model,
+                content: { parts: { text } },
+                outputDimensionality: req.dimensions,
+            }))
+        })
+    });
+    let { body } = response;
+    if (response.ok) {
+        const { embeddings } = JSON.parse(await response.text());
+        body = JSON.stringify({
+            object: "list",
+            data: embeddings.map(({ values }, index) => ({
+                object: "embedding",
+                index,
+                embedding: values,
+            })),
+            model: req.model,
+        }, null, "  ");
+    }
+    return new Response(body, fixCors(response));
 }
-
-
-// =================================================================
-// ==================== TTS处理逻辑及WAV头转换 =====================
-// =================================================================
-
-/**
- * 将原始PCM数据（s16le, 24kHz, 单声道）转换为WAV格式的Buffer
- * @param {Buffer} pcmData - 原始的PCM数据Buffer
- * @returns {Buffer} - 包含了WAV头的完整WAV数据Buffer
- */
 function addWavHeader(pcmData) {
-  const sampleRate = 24000;
-  const numChannels = 1;
-  const bitsPerSample = 16;
-  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-  const blockAlign = numChannels * (bitsPerSample / 8);
-  const dataSize = pcmData.length;
-  const chunkSize = 36 + dataSize;
-
-  const header = Buffer.alloc(44);
-
-  header.write('RIFF', 0);
-  header.writeUInt32LE(chunkSize, 4);
-  header.write('WAVE', 8);
-  header.write('fmt ', 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(numChannels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write('data', 36);
-  header.writeUInt32LE(dataSize, 40);
-
-  return Buffer.concat([header, pcmData]);
+    const sampleRate = 24000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const dataSize = pcmData.length;
+    const chunkSize = 36 + dataSize;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(chunkSize, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40);
+    return Buffer.concat([header, pcmData]);
 }
-
-// 这个函数是为 /chat/completions 中的TTS保留的，保持不变
 async function handleTts(req, apiKey) {
-  if (!req.messages || req.messages.length === 0) {
-    throw new HttpError("`messages` array is required for TTS.", 400);
-  }
-  if (!req.audio?.voice) {
-    throw new HttpError("`audio.voice` is required for TTS.", 400);
-  }
-
-  const lastMessage = req.messages[req.messages.length - 1];
-  const parts = await transformMsg(lastMessage);
-  const inputText = parts.map(p => p.text).join(' ');
-
-  if (!inputText) {
-    throw new HttpError("A non-empty text message is required for TTS.", 400);
-  }
-
-  // 从请求中获取模型，如果未提供则使用默认TTS模型
-  const geminiTtsModel = req.model || "gemini-2.5-flash-preview-tts";
-
-  const geminiPayload = {
-    model: geminiTtsModel,
-    contents: [{
-      parts: [{ text: inputText }]
-    }],
-    generationConfig: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: req.audio.voice
-          }
-        }
-      }
-    },
-  };
-
-  const url = `${BASE_URL}/${API_VERSION}/models/${geminiTtsModel}:generateContent`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify(geminiPayload),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error("Gemini TTS API Error:", errorBody);
-    return new Response(errorBody, fixCors(response));
-  }
-
-  const geminiResponse = await response.json();
-  const audioDataBase64 = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-  if (!audioDataBase64) {
-    console.error("Could not extract audio data from Gemini response:", JSON.stringify(geminiResponse));
-    throw new HttpError("Failed to generate audio, invalid response from upstream.", 500);
-  }
-
-  const requestedFormat = req.audio.format || 'wav';
-  let finalAudioDataB64 = audioDataBase64;
-  let finalFormat = 'pcm_s16le_24000_mono';
-
-  if (requestedFormat.toLowerCase() === 'wav') {
-    const pcmData = Buffer.from(audioDataBase64, 'base64');
-    const wavData = addWavHeader(pcmData);
-    finalAudioDataB64 = wavData.toString('base64');
-    finalFormat = 'wav';
-  }
-  
-  const openAiResponse = {
-    id: "chatcmpl-tts-" + generateId(),
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1000),
-    model: req.model,
-    choices: [{
-      index: 0,
-      message: {
-        role: "assistant",
-        audio: {
-          format: finalFormat,
-          data: finalAudioDataB64,
-          transcript: inputText,
-        }
-      },
-      finish_reason: "stop",
-    }],
-    usage: null,
-  };
-  
-  return new Response(JSON.stringify(openAiResponse, null, 2), fixCors({ headers: response.headers }));
+    if (!req.messages || req.messages.length === 0) {
+        throw new HttpError("`messages` array is required for TTS.", 400);
+    }
+    if (!req.audio?.voice) {
+        throw new HttpError("`audio.voice` is required for TTS.", 400);
+    }
+    const lastMessage = req.messages[req.messages.length - 1];
+    const parts = await transformMsg(lastMessage);
+    const inputText = parts.map(p => p.text).join(' ');
+    if (!inputText) {
+        throw new HttpError("A non-empty text message is required for TTS.", 400);
+    }
+    const geminiTtsModel = req.model || "gemini-2.5-flash-preview-tts";
+    const geminiPayload = {
+        model: geminiTtsModel,
+        contents: [{
+            parts: [{ text: inputText }]
+        }],
+        generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+                voiceConfig: {
+                    prebuiltVoiceConfig: {
+                        voiceName: req.audio.voice
+                    }
+                }
+            }
+        },
+    };
+    const url = `${BASE_URL}/${API_VERSION}/models/${geminiTtsModel}:generateContent`;
+    const response = await fetch(url, {
+        method: "POST",
+        headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+        body: JSON.stringify(geminiPayload),
+    });
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("Gemini TTS API Error:", errorBody);
+        return new Response(errorBody, fixCors(response));
+    }
+    const geminiResponse = await response.json();
+    const audioDataBase64 = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!audioDataBase64) {
+        console.error("Could not extract audio data from Gemini response:", JSON.stringify(geminiResponse));
+        throw new HttpError("Failed to generate audio, invalid response from upstream.", 500);
+    }
+    const requestedFormat = req.audio.format || 'wav';
+    let finalAudioDataB64 = audioDataBase64;
+    let finalFormat = 'pcm_s16le_24000_mono';
+    if (requestedFormat.toLowerCase() === 'wav') {
+        const pcmData = Buffer.from(audioDataBase64, 'base64');
+        const wavData = addWavHeader(pcmData);
+        finalAudioDataB64 = wavData.toString('base64');
+        finalFormat = 'wav';
+    }
+    const openAiResponse = {
+        id: "chatcmpl-tts-" + generateId(),
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: req.model,
+        choices: [{
+            index: 0,
+            message: {
+                role: "assistant",
+                audio: {
+                    format: finalFormat,
+                    data: finalAudioDataB64,
+                    transcript: inputText,
+                }
+            },
+            finish_reason: "stop",
+        }],
+        usage: null,
+    };
+    return new Response(JSON.stringify(openAiResponse, null, 2), fixCors({ headers: response.headers }));
 }
-
-// =================================================================
-// ============== 新增 handleSpeech 函数用于 /audio/speech ===========
-// =================================================================
-
-/**
- * 处理对 /v1/audio/speech 端点的请求，模拟OpenAI的行为。
- * @param {object} req - 从客户端收到的OpenAI格式的请求体。
- * @param {string} apiKey - Gemini API密钥。
- * @returns {Response} - 一个直接包含音频数据的Response对象。
- */
 async function handleSpeech(req, apiKey) {
-  // 1. 验证和提取OpenAI风格的输入
-  if (!req.input) {
-    throw new HttpError("`input` field is required.", 400);
-  }
-  if (!req.voice) {
-    throw new HttpError("`voice` field is required.", 400);
-  }
-
-  // 2. 构建Gemini API请求体
-  // 从OpenAI请求中获取'model'字段，如果未提供，则回退到默认的Gemini TTS模型。
-  // 'voice' 字段直接映射。
-  const geminiTtsModel = req.model || "gemini-2.5-flash-preview-tts"; 
-  const geminiPayload = {
-    model: geminiTtsModel,
-    contents: [{
-      parts: [{ text: req.input }]
-    }],
-    generationConfig: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: req.voice
-          }
-        }
-      }
-    },
-  };
-
-  // 3. 发送请求到Gemini TTS API
-  const url = `${BASE_URL}/${API_VERSION}/models/${geminiTtsModel}:generateContent`;
-  const geminiApiResponse = await fetch(url, {
-    method: "POST",
-    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify(geminiPayload),
-  });
-
-  if (!geminiApiResponse.ok) {
-    const errorBody = await geminiApiResponse.text();
-    console.error("Gemini TTS API Error:", errorBody);
-    // 返回带有CORS头的错误信息
-    return new Response(errorBody, fixCors({ headers: geminiApiResponse.headers, status: geminiApiResponse.status, statusText: geminiApiResponse.statusText }));
-  }
-
-  // 4. 解析Gemini响应并提取音频数据
-  const geminiResponseJson = await geminiApiResponse.json();
-  const audioDataBase64 = geminiResponseJson.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-  if (!audioDataBase64) {
-    throw new HttpError("Failed to extract audio data from Gemini response.", 500);
-  }
-  
-  const pcmData = Buffer.from(audioDataBase64, 'base64');
-
-  // 5. 根据请求的格式准备最终的音频数据和响应头
-  // OpenAI 默认格式是 'mp3'。
-  const responseFormat = req.response_format || 'mp3';
-  let audioData;
-  let contentType;
-  const corsHeaders = fixCors({}).headers;
-
-  // 重要限制：此代码只能生成 PCM 和 WAV。无法生成 MP3/Opus/AAC/FLAC。
-  // 如果客户端请求了不支持的格式，我们回退到 WAV。
-  switch (responseFormat.toLowerCase()) {
-    case 'wav':
-      audioData = addWavHeader(pcmData);
-      contentType = 'audio/wav';
-      break;
-    case 'pcm':
-      audioData = pcmData;
-      // 提供更详细的PCM Content-Type
-      contentType = 'audio/L16; rate=24000; channels=1';
-      break;
-    case 'mp3':
-    case 'opus':
-    case 'aac':
-    case 'flac':
-    default:
-      // 回退到WAV，因为我们无法在当前环境中编码为MP3等格式
-      audioData = addWavHeader(pcmData);
-      contentType = 'audio/wav';
-      // 添加一个警告头，告知客户端格式已更改
-      corsHeaders.set('X-Warning', `Unsupported format "${responseFormat}" requested, fallback to "wav".`);
-      break;
-  }
-
-  corsHeaders.set('Content-Type', contentType);
-
-  // 6. 返回包含原始音频数据的响应
-  return new Response(audioData, {
-    status: 200,
-    headers: corsHeaders
-  });
+    if (!req.input) {
+        throw new HttpError("`input` field is required.", 400);
+    }
+    if (!req.voice) {
+        throw new HttpError("`voice` field is required.", 400);
+    }
+    const geminiTtsModel = req.model || "gemini-2.5-flash-preview-tts";
+    const geminiPayload = {
+        model: geminiTtsModel,
+        contents: [{
+            parts: [{ text: req.input }]
+        }],
+        generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+                voiceConfig: {
+                    prebuiltVoiceConfig: {
+                        voiceName: req.voice
+                    }
+                }
+            }
+        },
+    };
+    const url = `${BASE_URL}/${API_VERSION}/models/${geminiTtsModel}:generateContent`;
+    const geminiApiResponse = await fetch(url, {
+        method: "POST",
+        headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+        body: JSON.stringify(geminiPayload),
+    });
+    if (!geminiApiResponse.ok) {
+        const errorBody = await geminiApiResponse.text();
+        console.error("Gemini TTS API Error:", errorBody);
+        return new Response(errorBody, fixCors({ headers: geminiApiResponse.headers, status: geminiApiResponse.status, statusText: geminiApiResponse.statusText }));
+    }
+    const geminiResponseJson = await geminiApiResponse.json();
+    const audioDataBase64 = geminiResponseJson.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!audioDataBase64) {
+        throw new HttpError("Failed to extract audio data from Gemini response.", 500);
+    }
+    const pcmData = Buffer.from(audioDataBase64, 'base64');
+    const responseFormat = req.response_format || 'mp3';
+    let audioData;
+    let contentType;
+    const corsHeaders = fixCors({}).headers;
+    switch (responseFormat.toLowerCase()) {
+        case 'wav':
+            audioData = addWavHeader(pcmData);
+            contentType = 'audio/wav';
+            break;
+        case 'pcm':
+            audioData = pcmData;
+            contentType = 'audio/L16; rate=24000; channels=1';
+            break;
+        case 'mp3':
+        case 'opus':
+        case 'aac':
+        case 'flac':
+        default:
+            audioData = addWavHeader(pcmData);
+            contentType = 'audio/wav';
+            corsHeaders.set('X-Warning', `Unsupported format "${responseFormat}" requested, fallback to "wav".`);
+            break;
+    }
+    corsHeaders.set('Content-Type', contentType);
+    return new Response(audioData, {
+        status: 200,
+        headers: corsHeaders
+    });
 }
 
 
-// ... handleCompletions and all other helper functions remain unchanged ...
 const DEFAULT_MODEL = "gemini-2.5-flash";
 async function handleCompletions (req, apiKey) {
   const isTtsRequest = Array.isArray(req.modalities) && req.modalities.includes("audio");
@@ -407,7 +335,17 @@ async function handleCompletions (req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
+  
+  const isImageGenerationRequest = model.includes("image-generation");
+  
   let body = await transformRequest(req);
+
+  if (isImageGenerationRequest) {
+    body.generationConfig = body.generationConfig || {};
+    body.generationConfig.responseModalities = ["TEXT", "IMAGE"];
+    delete body.system_instruction;
+  }
+  
   const extra = req.extra_body?.google
   if (extra) {
     if (extra.safety_settings) {
@@ -423,7 +361,6 @@ async function handleCompletions (req, apiKey) {
   switch (true) {
     case model.endsWith(":search"):
       model = model.substring(0, model.length - 7);
-      // eslint-disable-next-line no-fallthrough
     case req.model.endsWith("-search-preview"):
       body.tools = body.tools || [];
       body.tools.push({googleSearch: {}});
@@ -475,7 +412,6 @@ async function handleCompletions (req, apiKey) {
   return new Response(body, fixCors(response));
 }
 
-// ... (所有 transform* and helper functions, e.g., generateId, transformCandidates, etc., are unchanged)
 const adjustProps = (schemaPart) => {
   if (typeof schemaPart !== "object" || schemaPart === null) {
     return;
@@ -494,7 +430,6 @@ const adjustSchema = (schema) => {
   delete obj.strict;
   return adjustProps(schema);
 };
-
 const harmCategory = [
   "HARM_CATEGORY_HATE_SPEECH",
   "HARM_CATEGORY_SEXUALLY_EXPLICIT",
@@ -510,12 +445,12 @@ const fieldsMap = {
   frequency_penalty: "frequencyPenalty",
   max_completion_tokens: "maxOutputTokens",
   max_tokens: "maxOutputTokens",
-  n: "candidateCount", // not for streaming
+  n: "candidateCount",
   presence_penalty: "presencePenalty",
   seed: "seed",
   stop: "stopSequences",
   temperature: "temperature",
-  top_k: "topK", // non-standard
+  top_k: "topK",
   top_p: "topP",
 };
 const thinkingBudgetMap = {
@@ -616,7 +551,6 @@ const transformFnResponse = ({ content, tool_call_id }, parts) => {
     }
   };
 };
-
 const transformFnCalls = ({ tool_calls }) => {
   const calls = {};
   const parts = tool_calls.map(({ function: { arguments: argstr, name }, id, type }, i) => {
@@ -646,9 +580,12 @@ const transformFnCalls = ({ tool_calls }) => {
 const transformMsg = async ({ content }) => {
   const parts = [];
   if (!Array.isArray(content)) {
-    parts.push({ text: content });
+    if (content) {
+        parts.push({ text: content });
+    }
     return parts;
   }
+  
   for (const item of content) {
     switch (item.type) {
       case "input_text":
@@ -702,8 +639,60 @@ const transformMsg = async ({ content }) => {
   return parts;
 };
 
+function parseAssistantContent(content) {
+  const parts = [];
+  const imageMarkdownRegex = /!\[gemini-image-generation\]\(data:(image\/\w+);base64,([\w+/=-]+)\)/g;
+
+  if (typeof content !== 'string') {
+      return parts;
+  }
+  
+  let lastIndex = 0;
+  let match;
+
+  while ((match = imageMarkdownRegex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+          parts.push({ text: content.substring(lastIndex, match.index) });
+      }
+
+      const mimeType = match[1];
+      const data = match[2];
+      parts.push({
+          inlineData: {
+              mimeType,
+              data,
+          },
+      });
+
+      lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+      parts.push({ text: content.substring(lastIndex) });
+  }
+
+  if (parts.length === 0 && content) {
+      parts.push({ text: content });
+  }
+
+  return parts;
+}
+
+function parseContentArray(contentArray) {
+    const geminiParts = [];
+    if (!Array.isArray(contentArray)) return geminiParts;
+
+    for (const item of contentArray) {
+        if (item.type === 'text' && typeof item.text === 'string') {
+            const parsedSubParts = parseAssistantContent(item.text);
+            geminiParts.push(...parsedSubParts);
+        }
+    }
+    return geminiParts;
+}
+
 const transformMessages = async (messages) => {
-  if (!messages) { return; }
+  if (!messages) { return []; }
   const contents = [];
   let system_instruction;
   for (const item of messages) {
@@ -712,34 +701,49 @@ const transformMessages = async (messages) => {
         system_instruction = { parts: await transformMsg(item) };
         continue;
       case "tool":
-        let { role, parts } = contents[contents.length - 1] ?? {};
-        if (role !== "function") {
-          const calls = parts?.calls;
-          parts = []; parts.calls = calls;
-          contents.push({ role: "function", parts });
+        let { role: r, parts: p } = contents[contents.length - 1] ?? {};
+        if (r !== "function") {
+          const calls = p?.calls;
+          p = []; p.calls = calls;
+          contents.push({ role: "function", parts: p });
         }
-        transformFnResponse(item, parts);
+        transformFnResponse(item, p);
         continue;
       case "assistant":
         item.role = "model";
-        break;
+        let assistantParts;
+        if (item.tool_calls) {
+            assistantParts = transformFnCalls(item);
+        } else if (typeof item.content === 'string') {
+          assistantParts = parseAssistantContent(item.content);
+        } else if (Array.isArray(item.content)) {
+          assistantParts = parseContentArray(item.content);
+        } else {
+          assistantParts = [];
+        }
+        contents.push({
+          role: item.role,
+          parts: assistantParts
+        });
+        continue;
       case "user":
+        contents.push({
+          role: item.role,
+          parts: item.tool_calls ? transformFnCalls(item) : await transformMsg(item)
+        });
         break;
       default:
         throw new HttpError(`Unknown message role: "${item.role}"`, 400);
     }
-    contents.push({
-      role: item.role,
-      parts: item.tool_calls ? transformFnCalls(item) : await transformMsg(item)
-    });
   }
   if (system_instruction) {
     if (!contents[0]?.parts.some(part => part.text)) {
-      contents.unshift({ role: "user", parts: { text: " " } });
+      contents.unshift({ role: "user", parts: [{ text: " " }] });
     }
   }
   return { system_instruction, contents };
 };
+
 
 const transformTools = (req) => {
   let tools, tool_config;
@@ -761,7 +765,6 @@ const transformTools = (req) => {
   }
   return { tools, tool_config };
 };
-
 const transformRequest = async (req) => ({
   ...await transformMessages(req.messages),
   safetySettings,
@@ -781,9 +784,10 @@ const reasonsMap = {
   "SAFETY": "content_filter",
   "RECITATION": "content_filter",
 };
-const SEP = "\n\n|>";
+
 const transformCandidates = (key, cand) => {
-  const message = { role: "assistant", content: [] };
+  const message = { role: "assistant" };
+  const contentParts = [];
   for (const part of cand.content?.parts ?? []) {
     if (part.functionCall) {
       const fc = part.functionCall;
@@ -796,11 +800,15 @@ const transformCandidates = (key, cand) => {
           arguments: JSON.stringify(fc.args),
         }
       });
-    } else {
-      message.content.push(part.text);
+    } else if (part.text) {
+      contentParts.push(part.text);
+    } else if (part.inlineData) {
+      const { mimeType, data } = part.inlineData;
+      const markdownImage = `![gemini-image-generation](data:${mimeType};base64,${data})`;
+      contentParts.push(markdownImage);
     }
   }
-  message.content = message.content.join(SEP) || null;
+  message.content = contentParts.length > 0 ? contentParts.join("\n\n") : null;
   return {
     index: cand.index || 0,
     [key]: message,
@@ -808,8 +816,8 @@ const transformCandidates = (key, cand) => {
     finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] || cand.finishReason,
   };
 };
-const transformCandidatesMessage = transformCandidates.bind(null, "message");
-const transformCandidatesDelta = transformCandidates.bind(null, "delta");
+const transformCandidatesMessage = (cand) => transformCandidates("message", cand);
+const transformCandidatesDelta = (cand) => transformCandidates("delta", cand);
 
 const transformUsage = (data) => ({
   completion_tokens: data.candidatesTokenCount,
@@ -838,7 +846,7 @@ const checkPromptBlock = (choices, promptFeedback, key) => {
 const processCompletionsResponse = (data, model, id) => {
   const obj = {
     id,
-    choices: data.candidates.map(transformCandidatesMessage),
+    choices: data.candidates.map(cand => transformCandidatesMessage(cand)),
     created: Math.floor(Date.now()/1000),
     model: data.modelVersion ?? model,
     object: "chat.completion",
@@ -880,7 +888,8 @@ function toOpenAiStream (line, controller) {
     if (!data.candidates) {
       throw new Error("Invalid completion chunk object");
     }
-  } catch (err) {
+  } catch (err)
+  {
     console.error("Error parsing response:", err);
     if (!this.shared.is_buffers_rest) { line =+ delimiter; }
     controller.enqueue(line);
@@ -888,7 +897,7 @@ function toOpenAiStream (line, controller) {
   }
   const obj = {
     id: this.id,
-    choices: data.candidates.map(transformCandidatesDelta),
+    choices: data.candidates.map(cand => transformCandidatesDelta(cand)),
     model: data.modelVersion ?? this.model,
     object: "chat.completion.chunk",
     usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
