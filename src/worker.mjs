@@ -18,21 +18,27 @@ export default {
         }
       };
       const { pathname } = new URL(request.url);
-      switch (true) {
-        case pathname.endsWith("/chat/completions"):
-          assert(request.method === "POST");
-          return handleCompletions(await request.json(), apiKey)
-            .catch(errHandler);
-        case pathname.endsWith("/embeddings"):
-          assert(request.method === "POST");
-          return handleEmbeddings(await request.json(), apiKey)
-            .catch(errHandler);
-        case pathname.endsWith("/models"):
-          assert(request.method === "GET");
-          return handleModels(apiKey)
-            .catch(errHandler);
-        default:
-          throw new HttpError("404 Not Found", 404);
+      const routeRegex = /^\/([\w.-]+)\/v1\/(chat\/completions|embeddings)$/;
+      const match = pathname.match(routeRegex);
+
+      if (!match) {
+        throw new HttpError("404 Not Found. Use format: /<model-name>/v1/chat/completions", 404);
+      }
+
+      const modelFromUrl = match[1];
+      const endpoint = match[2];
+      let body;
+      try {
+        body = await request.json();
+      } catch (e) {
+        body = {};
+      }
+      body.model = modelFromUrl;
+
+      if (endpoint === "chat/completions") {
+        return handleCompletions(body, apiKey).catch(errHandler);
+      } else if (endpoint === "embeddings") {
+        return handleEmbeddings(body, apiKey).catch(errHandler);
       }
     } catch (err) {
       return errHandler(err);
