@@ -495,7 +495,7 @@ const transformConfig = (req, model) => {
         break;
     }
     if (typeof thinkingBudget !== "undefined") {
-      cfg.thinkingConfig = { thinkingBudget };
+      cfg.thinkingConfig = { thinkingBudget, includeThoughts: true };
     }
   }
   return cfg;
@@ -798,6 +798,8 @@ const reasonsMap = {
 const transformCandidates = (key, cand) => {
   const message = { role: "assistant" };
   const contentParts = [];
+  const reasoningParts = [];
+
   for (const part of cand.content?.parts ?? []) {
     if (part.functionCall) {
       const fc = part.functionCall;
@@ -810,6 +812,8 @@ const transformCandidates = (key, cand) => {
           arguments: JSON.stringify(fc.args),
         }
       });
+    } else if (part.thought === true && part.text) {
+      reasoningParts.push(part.text);
     } else if (part.text) {
       contentParts.push(part.text);
     } else if (part.inlineData) {
@@ -818,7 +822,14 @@ const transformCandidates = (key, cand) => {
       contentParts.push(markdownImage);
     }
   }
+
+  const reasoningText = reasoningParts.join("\n\n");
+  if (reasoningText) {
+    message.reasoning_content = reasoningText;
+  }
+
   message.content = contentParts.length > 0 ? contentParts.join("\n\n") : null;
+
   return {
     index: cand.index || 0,
     [key]: message,
@@ -826,6 +837,7 @@ const transformCandidates = (key, cand) => {
     finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] || cand.finishReason,
   };
 };
+
 const transformCandidatesMessage = (cand) => transformCandidates("message", cand);
 const transformCandidatesDelta = (cand) => transformCandidates("delta", cand);
 
@@ -928,9 +940,19 @@ function toOpenAiStream (line, controller) {
     }));
   }
   delete cand.delta.role;
-  if ("content" in cand.delta) {
+
+  if (cand.delta.content === null) {
+    delete cand.delta.content;
+  }
+
+  const hasContent = "content" in cand.delta;
+  const hasReasoning = "reasoning_content" in cand.delta;
+  const hasToolCalls = "tool_calls" in cand.delta;
+  
+  if (hasContent || hasReasoning || hasToolCalls) {
     controller.enqueue(sseline(obj));
   }
+
   cand.finish_reason = finish_reason;
   if (data.usageMetadata && this.streamIncludeUsage) {
     obj.usage = transformUsage(data.usageMetadata);
