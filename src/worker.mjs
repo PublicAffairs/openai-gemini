@@ -101,7 +101,7 @@ async function handleModels(apiKey) {
     }
     return new Response(body, fixCors(response));
 }
-const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
+const DEFAULT_EMBEDDINGS_MODEL = "gemini-embedding-001";
 async function handleEmbeddings(req, apiKey) {
     if (typeof req.model !== "string") {
         throw new HttpError("model is not specified", 400);
@@ -110,7 +110,7 @@ async function handleEmbeddings(req, apiKey) {
     if (req.model.startsWith("models/")) {
         model = req.model;
     } else {
-        if (!req.model.startsWith("gemini-")) {
+        if (!req.model.includes("embedding")) {
             req.model = DEFAULT_EMBEDDINGS_MODEL;
         }
         model = "models/" + req.model;
@@ -286,7 +286,7 @@ async function handleSpeech(req, apiKey) {
         throw new HttpError("Failed to extract audio data from Gemini response.", 500);
     }
     const pcmData = Buffer.from(audioDataBase64, 'base64');
-    const responseFormat = req.response_format || 'mp3';
+    const responseFormat = req.response_format || 'wav';
     let audioData;
     let contentType;
     const corsHeaders = fixCors({}).headers;
@@ -338,7 +338,7 @@ async function handleCompletions (req, apiKey) {
   
   const isImageGenerationRequest = model.includes("image-generation");
   
-  let body = await transformRequest(req);
+  let body = await transformRequest(req, model);
 
   if (isImageGenerationRequest) {
     body.generationConfig = body.generationConfig || {};
@@ -453,12 +453,8 @@ const fieldsMap = {
   top_k: "topK",
   top_p: "topP",
 };
-const thinkingBudgetMap = {
-  low: 1024,
-  medium: 8192,
-  high: 24576,
-};
-const transformConfig = (req) => {
+
+const transformConfig = (req, model) => {
   let cfg = {};
   for (let key in req) {
     const matchedKey = fieldsMap[key];
@@ -486,7 +482,21 @@ const transformConfig = (req) => {
     }
   }
   if (req.reasoning_effort) {
-    cfg.thinkingConfig = { thinkingBudget: thinkingBudgetMap[req.reasoning_effort] };
+    let thinkingBudget;
+    switch (req.reasoning_effort) {
+      case "low":
+        thinkingBudget = model?.includes("pro") ? 128 : 0;
+        break;
+      case "medium":
+        thinkingBudget = -1;
+        break;
+      case "high":
+        thinkingBudget = 24576;
+        break;
+    }
+    if (typeof thinkingBudget !== "undefined") {
+      cfg.thinkingConfig = { thinkingBudget };
+    }
   }
   return cfg;
 };
@@ -765,10 +775,10 @@ const transformTools = (req) => {
   }
   return { tools, tool_config };
 };
-const transformRequest = async (req) => ({
+const transformRequest = async (req, model) => ({
   ...await transformMessages(req.messages),
   safetySettings,
-  generationConfig: transformConfig(req),
+  generationConfig: transformConfig(req, model),
   ...transformTools(req),
 });
 

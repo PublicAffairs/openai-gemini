@@ -115,18 +115,40 @@ Requests use the specified [model] if its name starts with "gemini-", "gemma-", 
 or "models/". Otherwise, these defaults apply:
 
 - `chat/completions`: `gemini-2.5-flash`
-- `embeddings`: `text-embedding-004`
+- `embeddings`: `gemini-embedding-001`
+- `audio/speech`: `gemini-2.5-flash-preview-tts`
 
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
 
+## Reasoning (Thinking)
+
+This proxy supports the `reasoning_effort` parameter to control the Gemini model's internal "thinking" process, mapping it to Gemini's `thinkingBudget`.
+
+- `reasoning_effort: "low"`: Uses the minimum thinking budget. For "pro" models, this is `128`; for other models (like Flash), it is `0` (disabling thinking). This is useful for faster responses on simpler tasks.
+- `reasoning_effort: "medium"` (or not specified): Enables dynamic thinking (`-1`), allowing the model to adjust its thinking budget based on the request's complexity. This is the default behavior for Gemini 2.5 models.
+- `reasoning_effort: "high"`: Sets a high thinking budget (`24576`) for the most complex tasks that require deep reasoning and planning.
 
 ## Built-in tools
 
+### Web Search
 To use the **web search** tool, append ":search" to the model name
 (e.g., "gemini-2.5-flash:search").
 
 Note: The `annotations` message property is not implemented.
 
+### Image Generation
+To use the **image generation** tool, specify a model name that includes `image-generation`. The response will be delivered within the `chat/completions` message content as a markdown image string, like this: `![gemini-image-generation](data:image/png;base64,...)`.
+
+## Text-to-Speech (TTS)
+
+The proxy supports text-to-speech generation via the `/v1/audio/speech` endpoint, mapping to Gemini's audio generation capabilities.
+
+- **Endpoint**: `/v1/audio/speech`
+- **Method**: `POST`
+- **Supported Parameters**: `input`, `voice`, `model`, `response_format`.
+- **Supported `response_format`**: 
+    - Natively supports `wav` (with header) and `pcm` (raw audio data).
+    - Requesting other formats like `mp3`, `opus`, `aac`, or `flac` will result in a **fallback to the `wav` format**. In such cases, the response will include an `X-Warning` header indicating the fallback.
 
 ## Media
 
@@ -184,3 +206,4 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
 - [ ] `completions`
 - [x] `embeddings`
 - [x] `models`
+- [x] `audio/speech`
