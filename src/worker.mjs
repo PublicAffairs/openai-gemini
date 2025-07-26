@@ -357,6 +357,14 @@ async function handleCompletions (req, apiKey) {
     if (extra.thinking_config) {
       body.generationConfig.thinkingConfig = extra.thinking_config;
     }
+    // [MODIFICATION START] 增加对 url_context 工具的检测
+    // 如果客户端请求的 extra_body.google 中包含 url_context: true
+    // 则为 Gemini 请求添加 url_context 工具
+    if (extra.url_context) {
+        body.tools = body.tools || [];
+        body.tools.push({ "url_context": {} });
+    }
+    // [MODIFICATION END]
   }
   switch (true) {
     case model.endsWith(":search"):
@@ -830,6 +838,13 @@ const transformCandidates = (key, cand) => {
 
   message.content = contentParts.length > 0 ? contentParts.join("\n\n") : null;
 
+  if (cand.groundingMetadata) {
+    message.grounding_metadata = cand.groundingMetadata;
+  }
+  if (cand.url_context_metadata) {
+    message.url_context_metadata = cand.url_context_metadata;
+  }
+
   return {
     index: cand.index || 0,
     [key]: message,
@@ -948,8 +963,11 @@ function toOpenAiStream (line, controller) {
   const hasContent = "content" in cand.delta;
   const hasReasoning = "reasoning_content" in cand.delta;
   const hasToolCalls = "tool_calls" in cand.delta;
-  
-  if (hasContent || hasReasoning || hasToolCalls) {
+  // 因为元数据也被添加到了 delta 对象中，所以也要检查它们
+  const hasGrounding = "grounding_metadata" in cand.delta;
+  const hasUrlContext = "url_context_metadata" in cand.delta;
+
+  if (hasContent || hasReasoning || hasToolCalls || hasGrounding || hasUrlContext) {
     controller.enqueue(sseline(obj));
   }
 
