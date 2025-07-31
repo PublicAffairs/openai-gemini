@@ -1,3 +1,4 @@
+// НАЧАЛО ИСПРАВЛЕННОГО КОДА
 import { Buffer } from "node:buffer";
 
 export default {
@@ -67,8 +68,7 @@ const handleOPTIONS = async () => {
 const BASE_URL = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
-// https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
-const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
+const API_CLIENT = "genai-js/0.21.0";
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
@@ -169,7 +169,6 @@ async function handleCompletions (req, apiKey) {
   switch (true) {
     case model.endsWith(":search"):
       model = model.substring(0, model.length - 7);
-      // eslint-disable-next-line no-fallthrough
     case req.model.endsWith("-search-preview"):
       body.tools = body.tools || [];
       body.tools.push({googleSearch: {}});
@@ -185,7 +184,7 @@ async function handleCompletions (req, apiKey) {
 
   body = response.body;
   if (response.ok) {
-    let id = "chatcmpl-" + generateId(); //"chatcmpl-8pMMaqXMK68B3nyDBrapTDrhkHBQK";
+    let id = "chatcmpl-" + generateId();
     const shared = {};
     if (req.stream) {
       body = response.body
@@ -213,7 +212,7 @@ async function handleCompletions (req, apiKey) {
         }
       } catch (err) {
         console.error("Error parsing response:", err);
-        return new Response(body, fixCors(response)); // output as is
+        return new Response(body, fixCors(response));
       }
       body = processCompletionsResponse(body, model, id);
     }
@@ -255,12 +254,12 @@ const fieldsMap = {
   frequency_penalty: "frequencyPenalty",
   max_completion_tokens: "maxOutputTokens",
   max_tokens: "maxOutputTokens",
-  n: "candidateCount", // not for streaming
+  n: "candidateCount",
   presence_penalty: "presencePenalty",
   seed: "seed",
   stop: "stopSequences",
   temperature: "temperature",
-  top_k: "topK", // non-standard
+  top_k: "topK",
   top_p: "topP",
 };
 const thinkingBudgetMap = {
@@ -270,7 +269,6 @@ const thinkingBudgetMap = {
 };
 const transformConfig = (req) => {
   let cfg = {};
-  //if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
   for (let key in req) {
     const matchedKey = fieldsMap[key];
     if (matchedKey) {
@@ -286,7 +284,6 @@ const transformConfig = (req) => {
           cfg.responseMimeType = "text/x.enum";
           break;
         }
-        // eslint-disable-next-line no-fallthrough
       case "json_object":
         cfg.responseMimeType = "application/json";
         break;
@@ -393,15 +390,9 @@ const transformFnCalls = ({ tool_calls }) => {
 const transformMsg = async ({ content }) => {
   const parts = [];
   if (!Array.isArray(content)) {
-    // system, user: string
-    // assistant: string or null (Required unless tool_calls is specified.)
     parts.push({ text: content });
     return parts;
   }
-  // user:
-  // An array of content parts with a defined type.
-  // Supported options differ based on the model being used to generate the response.
-  // Can contain text, image, or audio inputs.
   for (const item of content) {
     switch (item.type) {
       case "text":
@@ -423,7 +414,7 @@ const transformMsg = async ({ content }) => {
     }
   }
   if (content.every(item => item.type === "image_url")) {
-    parts.push({ text: "" }); // to avoid "Unable to submit request because it must have a text parameter"
+    parts.push({ text: "" });
   }
   return parts;
 };
@@ -438,13 +429,12 @@ const transformMessages = async (messages) => {
         system_instruction = { parts: await transformMsg(item) };
         continue;
       case "tool":
-        // eslint-disable-next-line no-case-declarations
         let { role, parts } = contents[contents.length - 1] ?? {};
         if (role !== "function") {
           const calls = parts?.calls;
           parts = []; parts.calls = calls;
           contents.push({
-            role: "function", // ignored
+            role: "function",
             parts
           });
         }
@@ -468,34 +458,28 @@ const transformMessages = async (messages) => {
       contents.unshift({ role: "user", parts: { text: " " } });
     }
   }
-  //console.info(JSON.stringify(contents, 2));
   return { system_instruction, contents };
 };
 
 const transformTools = (req) => {
+  // ===================== НАЧАЛО БЛОКА ДЛЯ ОТЛАДКИ =====================
+  console.log("--- DEBUG LOG V4: ENTERING transformTools FUNCTION ---");
+
   let tools, tool_config;
   if (req.tools) {
+    console.log("--- DEBUG LOG V4: req.tools EXISTS ---");
     const funcs = req.tools.filter(tool => tool.type === "function");
 
-    /**
-     * Рекурсивно "очищает" схему параметров от полей, несовместимых с Gemini API.
-     * @param {object} obj - Объект или часть объекта схемы.
-     */
     const sanitizeSchemaRecursively = (obj) => {
       if (typeof obj !== 'object' || obj === null) {
         return;
       }
-
       if (Array.isArray(obj)) {
         obj.forEach(sanitizeSchemaRecursively);
         return;
       }
-
-      // Удаляем несовместимые ключи на текущем уровне
       delete obj['$schema'];
       delete obj['additionalProperties'];
-
-      // Рекурсивно проходим по всем дочерним свойствам
       for (const key in obj) {
         if (obj.hasOwnProperty(key)) {
             sanitizeSchemaRecursively(obj[key]);
@@ -510,8 +494,9 @@ const transformTools = (req) => {
         const originalFunction = schema.function;
         const parameters = originalFunction.parameters;
 
-        // Запускаем рекурсивную очистку
+        console.log("--- DEBUG LOG V4: BEFORE SANITIZE ---", JSON.stringify(parameters, null, 2));
         sanitizeSchemaRecursively(parameters);
+        console.log("--- DEBUG LOG V4: AFTER SANITIZE ---", JSON.stringify(parameters, null, 2));
 
         return {
           ...originalFunction,
@@ -520,6 +505,8 @@ const transformTools = (req) => {
       })
     }];
   }
+  // ===================== КОНЕЦ БЛОКА ДЛЯ ОТЛАДКИ =====================
+
   if (req.tool_choice) {
     const allowed_function_names = req.tool_choice?.type === "function" ? [ req.tool_choice?.function?.name ] : undefined;
     if (allowed_function_names || typeof req.tool_choice === "string") {
@@ -547,13 +534,11 @@ const generateId = () => {
   return Array.from({ length: 29 }, randomChar).join("");
 };
 
-const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse#finishreason
-  //"FINISH_REASON_UNSPECIFIED": // Default value. This value is unused.
+const reasonsMap = {
   "STOP": "stop",
   "MAX_TOKENS": "length",
   "SAFETY": "content_filter",
   "RECITATION": "content_filter",
-  //"OTHER": "OTHER",
 };
 const SEP = "\n\n|>";
 const transformCandidates = (key, cand) => {
@@ -576,11 +561,10 @@ const transformCandidates = (key, cand) => {
   }
   message.content = message.content.join(SEP) || null;
   return {
-    index: cand.index || 0, // 0-index is absent in new -002 models response
+    index: cand.index || 0,
     [key]: message,
     logprobs: null,
     finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] || cand.finishReason,
-    //original_finish_reason: cand.finishReason,
   };
 };
 const transformCandidatesMessage = transformCandidates.bind(null, "message");
@@ -605,7 +589,6 @@ const checkPromptBlock = (choices, promptFeedback, key) => {
       index: 0,
       [key]: null,
       finish_reason: "content_filter",
-      //original_finish_reason: data.promptFeedback.blockReason,
     });
   }
   return true;
@@ -617,7 +600,6 @@ const processCompletionsResponse = (data, model, id) => {
     choices: data.candidates.map(transformCandidatesMessage),
     created: Math.floor(Date.now()/1000),
     model: data.modelVersion ?? model,
-    //system_fingerprint: "fp_69829325d0",
     object: "chat.completion",
     usage: data.usageMetadata && transformUsage(data.usageMetadata),
   };
@@ -635,7 +617,7 @@ function parseStream (chunk, controller) {
     if (!match) { break; }
     controller.enqueue(match[1]);
     this.buffer = this.buffer.substring(match[0].length);
-  } while (true); // eslint-disable-line no-constant-condition
+  } while (true);
 }
 function parseStreamFlush (controller) {
   if (this.buffer) {
@@ -660,15 +642,13 @@ function toOpenAiStream (line, controller) {
   } catch (err) {
     console.error("Error parsing response:", err);
     if (!this.shared.is_buffers_rest) { line =+ delimiter; }
-    controller.enqueue(line); // output as is
+    controller.enqueue(line);
     return;
   }
   const obj = {
     id: this.id,
     choices: data.candidates.map(transformCandidatesDelta),
-    //created: Math.floor(Date.now()/1000),
     model: data.modelVersion ?? this.model,
-    //system_fingerprint: "fp_69829325d0",
     object: "chat.completion.chunk",
     usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
   };
@@ -678,17 +658,17 @@ function toOpenAiStream (line, controller) {
   }
   console.assert(data.candidates.length === 1, "Unexpected candidates count: %d", data.candidates.length);
   const cand = obj.choices[0];
-  cand.index = cand.index || 0; // absent in new -002 models response
+  cand.index = cand.index || 0;
   const finish_reason = cand.finish_reason;
   cand.finish_reason = null;
-  if (!this.last[cand.index]) { // first
+  if (!this.last[cand.index]) {
     controller.enqueue(sseline({
       ...obj,
       choices: [{ ...cand, tool_calls: undefined, delta: { role: "assistant", content: "" } }],
     }));
   }
   delete cand.delta.role;
-  if ("content" in cand.delta) { // prevent empty data (e.g. when MAX_TOKENS)
+  if ("content" in cand.delta) {
     controller.enqueue(sseline(obj));
   }
   cand.finish_reason = finish_reason;
@@ -706,3 +686,4 @@ function toOpenAiStreamFlush (controller) {
     controller.enqueue("data: [DONE]" + delimiter);
   }
 }
+// КОНЕЦ ИСПРАВЛЕННОГО КОДА
