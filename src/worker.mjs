@@ -476,8 +476,33 @@ const transformTools = (req) => {
   let tools, tool_config;
   if (req.tools) {
     const funcs = req.tools.filter(tool => tool.type === "function");
+    
+    // Вспомогательная функция для очистки параметров от невалидных полей (вроде $schema)
+    const sanitizeParameters = (parameters) => {
+      if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
+        return parameters;
+      }
+      const newParams = { ...parameters };
+      for (const key in newParams) {
+        if (key.startsWith('$')) {
+          delete newParams[key];
+        }
+      }
+      return newParams;
+    };
+
     funcs.forEach(adjustSchema);
-    tools = [{ function_declarations: funcs.map(schema => schema.function) }];
+    
+    tools = [{
+      function_declarations: funcs.map(schema => {
+        const originalFunction = schema.function;
+        // Возвращаем новую версию объекта функции с очищенными параметрами
+        return {
+          ...originalFunction,
+          parameters: sanitizeParameters(originalFunction.parameters)
+        };
+      })
+    }];
   }
   if (req.tool_choice) {
     const allowed_function_names = req.tool_choice?.type === "function" ? [ req.tool_choice?.function?.name ] : undefined;
