@@ -476,30 +476,46 @@ const transformTools = (req) => {
   let tools, tool_config;
   if (req.tools) {
     const funcs = req.tools.filter(tool => tool.type === "function");
-    
-    // Вспомогательная функция для очистки параметров от невалидных полей (вроде $schema)
-    const sanitizeParameters = (parameters) => {
-      if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
-        return parameters;
+
+    /**
+     * Рекурсивно "очищает" схему параметров от полей, несовместимых с Gemini API.
+     * @param {object} obj - Объект или часть объекта схемы.
+     */
+    const sanitizeSchemaRecursively = (obj) => {
+      if (typeof obj !== 'object' || obj === null) {
+        return;
       }
-      const newParams = { ...parameters };
-      for (const key in newParams) {
-        if (key.startsWith('$')) {
-          delete newParams[key];
+
+      if (Array.isArray(obj)) {
+        obj.forEach(sanitizeSchemaRecursively);
+        return;
+      }
+
+      // Удаляем несовместимые ключи на текущем уровне
+      delete obj['$schema'];
+      delete obj['additionalProperties'];
+
+      // Рекурсивно проходим по всем дочерним свойствам
+      for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            sanitizeSchemaRecursively(obj[key]);
         }
       }
-      return newParams;
     };
 
     funcs.forEach(adjustSchema);
-    
+
     tools = [{
       function_declarations: funcs.map(schema => {
         const originalFunction = schema.function;
-        // Возвращаем новую версию объекта функции с очищенными параметрами
+        const parameters = originalFunction.parameters;
+
+        // Запускаем рекурсивную очистку
+        sanitizeSchemaRecursively(parameters);
+
         return {
           ...originalFunction,
-          parameters: sanitizeParameters(originalFunction.parameters)
+          parameters: parameters,
         };
       })
     }];
