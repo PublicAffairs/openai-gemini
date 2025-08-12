@@ -96,7 +96,9 @@ async function handleModels (apiKey) {
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
+// handleEmbeddings 函数
 async function handleEmbeddings (req, apiKey) {
+  // --- 模型和输入处理 ---
   if (typeof req.model !== "string") {
     throw new HttpError("model is not specified", 400);
   }
@@ -112,17 +114,32 @@ async function handleEmbeddings (req, apiKey) {
   if (!Array.isArray(req.input)) {
     req.input = [ req.input ];
   }
+
+  // --- 构建并发送请求 ---
   const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
-      "requests": req.input.map(text => ({
-        model,
-        content: { parts: { text } },
-        outputDimensionality: req.dimensions,
-      }))
+      "requests": req.input.map(text => {
+        const geminiRequest = {
+          model,
+          content: { parts: [{ text }] },
+        };
+
+        if (req.dimensions) {
+          geminiRequest.outputDimensionality = req.dimensions;
+        }
+
+        if (req.task_type) { // 从顶层读取 task_type
+          geminiRequest.taskType = req.task_type.toUpperCase();
+        }
+
+        return geminiRequest;
+      })
     })
   });
+
+  // --- 响应处理 ---
   let { body } = response;
   if (response.ok) {
     const { embeddings } = JSON.parse(await response.text());
