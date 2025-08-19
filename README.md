@@ -115,7 +115,7 @@ Requests use the specified [model] if its name starts with "gemini-", "gemma-", 
 or "models/". Otherwise, these defaults apply:
 
 - `chat/completions`: `gemini-2.5-flash`
-- `embeddings`: `text-embedding-004`
+- `embeddings`: `gemini-embedding-001`
 
 [model]: https://ai.google.dev/gemini-api/docs/models/gemini
 

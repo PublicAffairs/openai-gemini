@@ -95,7 +95,7 @@ async function handleModels (apiKey) {
   return new Response(body, fixCors(response));
 }
 
-const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
+const DEFAULT_EMBEDDINGS_MODEL = "gemini-embedding-001";
 async function handleEmbeddings (req, apiKey) {
   if (typeof req.model !== "string") {
     throw new HttpError("model is not specified", 400);
