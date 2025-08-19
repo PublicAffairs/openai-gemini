@@ -546,8 +546,9 @@ const transformCandidatesMessage = transformCandidates.bind(null, "message");
 const transformCandidatesDelta = transformCandidates.bind(null, "delta");
 
 const notEmpty = (el) => Object.values(el).some(Boolean) ? el : undefined;
+const sum = (...numbers) => numbers.reduce((total, num) => total + (num ?? 0), 0);
 const transformUsage = (data) => ({
-  completion_tokens: data.candidatesTokenCount + (data.toolUsePromptTokenCount ?? 0),
+  completion_tokens: sum(data.candidatesTokenCount, data.toolUsePromptTokenCount, data.thoughtsTokenCount),
   prompt_tokens: data.promptTokenCount,
   total_tokens: data.totalTokenCount,
   completion_tokens_details: notEmpty({
