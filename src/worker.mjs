@@ -264,6 +264,8 @@ const fieldsMap = {
   top_p: "topP",
 };
 const thinkingBudgetMap = {
+  none: 0,
+  //minimal: 0,
   low: 1024,
   medium: 8192,
   high: 24576,

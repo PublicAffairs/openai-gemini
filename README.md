@@ -117,7 +117,7 @@ or "models/". Otherwise, these defaults apply:
 - `chat/completions`: `gemini-2.5-flash`
 - `embeddings`: `gemini-embedding-001`
 
-[model]: https://ai.google.dev/gemini-api/docs/models/gemini
+[model]: https://ai.google.dev/gemini-api/docs/models#model-variations
 
 
 ## Built-in tools
@@ -133,9 +133,18 @@ Note: The `annotations` message property is not implemented.
 [Vision] and [audio] input supported as per OpenAI [specs].
 Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
 
-[vision]: https://platform.openai.com/docs/guides/vision
-[audio]: https://platform.openai.com/docs/guides/audio?audio-generation-quickstart-example=audio-in
+[vision]: https://platform.openai.com/docs/guides/images-vision?api-mode=chat&format=url#giving-a-model-images-as-input
+[audio]: https://platform.openai.com/docs/guides/audio?example=audio-in&lang=curl#add-audio-to-your-existing-application
 [specs]: https://platform.openai.com/docs/api-reference/chat/create
+
+
+## Gemini-specific functions
+
+There are several features supported by Gemini that are not available in OpenAI models
+but can be enabled using the `extra_body` field.
+The most notable of these is [`thinking_config`](https://ai.google.dev/gemini-api/docs/openai#thinking).
+
+For more details, refer to the [Gemini API docs](https://ai.google.dev/gemini-api/docs/openai#extra-body).
 
 ---
 
@@ -178,9 +187,10 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `tools`
   - [x] `tool_choice`
   - [ ] `parallel_tool_calls` (is always active in Gemini)
-  - [x] [`extra_body`](https://ai.google.dev/gemini-api/docs/openai#extra-body)
+  - [x] [`extra_body`](#gemini-specific-functions)
 
   </details>
 - [ ] `completions`
 - [x] `embeddings`
+  - [x] `dimensions`
 - [x] `models`
