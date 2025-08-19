@@ -18,14 +18,15 @@ export default {
         }
       };
       const { pathname } = new URL(request.url);
+      const forceModel = (endpoint) => pathname.slice(0,-endpoint.length).replace(/\/v1$/, "").slice(1);
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
-          return handleCompletions(await request.json(), apiKey)
+          return handleCompletions(await request.json(), apiKey, forceModel("/chat/completions"))
             .catch(errHandler);
         case pathname.endsWith("/embeddings"):
           assert(request.method === "POST");
-          return handleEmbeddings(await request.json(), apiKey)
+          return handleEmbeddings(await request.json(), apiKey, forceModel("/embeddings"))
             .catch(errHandler);
         case pathname.endsWith("/models"):
           assert(request.method === "GET");
@@ -96,9 +97,11 @@ async function handleModels (apiKey) {
 }
 
 const DEFAULT_EMBEDDINGS_MODEL = "gemini-embedding-001";
-async function handleEmbeddings (req, apiKey) {
-  let modelFull, model;
+async function handleEmbeddings (req, apiKey, model) {
+  let modelFull;
   switch (true) {
+    case model:
+      break;
     case typeof req.model !== "string":
       throw new HttpError("model is not specified", 400);
     case req.model.startsWith("models/"):
@@ -143,9 +146,11 @@ async function handleEmbeddings (req, apiKey) {
 }
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
-async function handleCompletions (req, apiKey) {
-  let model;
+async function handleCompletions (req, apiKey, model) {
   switch (true) {
+    case model:
+      req.model = "";
+      break;
     case typeof req.model !== "string":
       break;
     case req.model.startsWith("models/"):
