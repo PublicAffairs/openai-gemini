@@ -97,27 +97,30 @@ async function handleModels (apiKey) {
 
 const DEFAULT_EMBEDDINGS_MODEL = "gemini-embedding-001";
 async function handleEmbeddings (req, apiKey) {
-  if (typeof req.model !== "string") {
-    throw new HttpError("model is not specified", 400);
+  let modelFull, model;
+  switch (true) {
+    case typeof req.model !== "string":
+      throw new HttpError("model is not specified", 400);
+    case req.model.startsWith("models/"):
+      modelFull = req.model;
+      model = modelFull.substring(7);
+      break;
+    case req.model.startsWith("gemini-"):
+      model = req.model;
+      break;
+    default:
+      model = DEFAULT_EMBEDDINGS_MODEL;
   }
-  let model;
-  if (req.model.startsWith("models/")) {
-    model = req.model;
-  } else {
-    if (!req.model.startsWith("gemini-")) {
-      req.model = DEFAULT_EMBEDDINGS_MODEL;
-    }
-    model = "models/" + req.model;
-  }
+  modelFull = modelFull ?? "models/" + model;
   if (!Array.isArray(req.input)) {
     req.input = [ req.input ];
   }
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/${modelFull}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
       "requests": req.input.map(text => ({
-        model,
+        model: modelFull,
         content: { parts: { text } },
         outputDimensionality: req.dimensions,
       }))
@@ -133,7 +136,7 @@ async function handleEmbeddings (req, apiKey) {
         index,
         embedding: values,
       })),
-      model: req.model,
+      model,
     }, null, "  ");
   }
   return new Response(body, fixCors(response));
@@ -141,7 +144,7 @@ async function handleEmbeddings (req, apiKey) {
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
 async function handleCompletions (req, apiKey) {
-  let model = DEFAULT_MODEL;
+  let model;
   switch (true) {
     case typeof req.model !== "string":
       break;
@@ -153,6 +156,7 @@ async function handleCompletions (req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
+  model = model || DEFAULT_MODEL;
   let body = await transformRequest(req);
   const extra = req.extra_body?.google;
   if (extra) {
