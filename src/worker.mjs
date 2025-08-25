@@ -103,27 +103,45 @@ async function handleModels(apiKey) {
 }
 const DEFAULT_EMBEDDINGS_MODEL = "gemini-embedding-001";
 async function handleEmbeddings(req, apiKey) {
-    if (typeof req.model !== "string") {
-        throw new HttpError("model is not specified", 400);
+    let modelFull, model;
+    switch (true) {
+    case typeof req.model !== "string":
+      throw new HttpError("model is not specified", 400);
+    case req.model.startsWith("models/"):
+      modelFull = req.model;
+      model = modelFull.substring(7);
+      break;
+    case req.model.startsWith("gemini-"):
+      model = req.model;
+      break;
+    default:
+      model = DEFAULT_EMBEDDINGS_MODEL;
     }
-    let model;
-    if (req.model.startsWith("models/")) {
-        model = req.model;
-    } else {
-        if (!req.model.includes("embedding")) {
-            req.model = DEFAULT_EMBEDDINGS_MODEL;
-        }
-        model = "models/" + req.model;
-    }
+    modelFull = modelFull ?? "models/" + model;
+
+    // if (typeof req.model !== "string") {
+    //     throw new HttpError("model is not specified", 400);
+    // }
+    // let model;
+    // if (req.model.startsWith("models/")) {
+    //     model = req.model;
+    // } else {
+    //     if (!req.model.includes("embedding")) {
+    //         req.model = DEFAULT_EMBEDDINGS_MODEL;
+    //     }
+    //     model = "models/" + req.model;
+    // }
+
     if (!Array.isArray(req.input)) {
         req.input = [req.input];
     }
-    const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
+    // const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
+    const response = await fetch(`${BASE_URL}/${API_VERSION}/${modelFull}:batchEmbedContents`, {
         method: "POST",
         headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
         body: JSON.stringify({
             "requests": req.input.map(text => ({
-                model,
+                model: modelFull,
                 content: { parts: { text } },
                 outputDimensionality: req.dimensions,
             }))
@@ -139,7 +157,7 @@ async function handleEmbeddings(req, apiKey) {
                 index,
                 embedding: values,
             })),
-            model: req.model,
+            model,
         }, null, "  ");
     }
     return new Response(body, fixCors(response));
@@ -323,7 +341,7 @@ async function handleCompletions (req, apiKey) {
   if (isTtsRequest) {
     return handleTts(req, apiKey);
   }
-  let model = DEFAULT_MODEL;
+  let model;
   switch (true) {
     case typeof req.model !== "string":
       break;
@@ -335,6 +353,7 @@ async function handleCompletions (req, apiKey) {
     case req.model.startsWith("learnlm-"):
       model = req.model;
   }
+  model = model || DEFAULT_MODEL;
   
   const isImageGenerationRequest = model.includes("image-generation");
   
@@ -346,7 +365,7 @@ async function handleCompletions (req, apiKey) {
     delete body.system_instruction;
   }
   
-  const extra = req.extra_body?.google
+  const extra = req.extra_body?.google;
   if (extra) {
     if (extra.safety_settings) {
       body.safetySettings = extra.safety_settings;
@@ -368,8 +387,8 @@ async function handleCompletions (req, apiKey) {
   }
   switch (true) {
     case model.endsWith(":search"):
-      model = model.substring(0, model.length - 7);
-    case req.model.endsWith("-search-preview"):
+      model = model.slice(0,-7);
+    case req.model?.includes("-search-preview"):
       body.tools = body.tools || [];
       body.tools.push({googleSearch: {}});
   }
@@ -436,6 +455,7 @@ const adjustProps = (schemaPart) => {
 const adjustSchema = (schema) => {
   const obj = schema[schema.type];
   delete obj.strict;
+  delete obj.parameters?.$schema;
   return adjustProps(schema);
 };
 const harmCategory = [
@@ -856,10 +876,26 @@ const transformCandidates = (key, cand) => {
 const transformCandidatesMessage = (cand) => transformCandidates("message", cand);
 const transformCandidatesDelta = (cand) => transformCandidates("delta", cand);
 
+const notEmpty = (el) => Object.values(el).some(Boolean) ? el : undefined;
+
+const sum = (...numbers) => numbers.reduce((total, num) => total + (num ?? 0), 0);
 const transformUsage = (data) => ({
-  completion_tokens: data.candidatesTokenCount,
+  completion_tokens: sum(data.candidatesTokenCount, data.toolUsePromptTokenCount, data.thoughtsTokenCount),
   prompt_tokens: data.promptTokenCount,
-  total_tokens: data.totalTokenCount
+  total_tokens: data.totalTokenCount,
+  completion_tokens_details: notEmpty({
+    audio_tokens: data.candidatesTokensDetails
+      ?.find(el => el.modality === "AUDIO")
+      ?.tokenCount,
+    reasoning_tokens: data.thoughtsTokenCount,
+  }),
+  prompt_tokens_details: notEmpty({
+    audio_tokens: data.promptTokensDetails
+      ?.find(el => el.modality === "AUDIO")
+      ?.tokenCount,
+    cached_tokens: data.cacheTokensDetails
+      ?.reduce((acc,el) => acc + el.tokenCount, 0),
+  }),
 });
 
 const checkPromptBlock = (choices, promptFeedback, key) => {
