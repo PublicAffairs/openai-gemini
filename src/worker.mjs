@@ -355,7 +355,7 @@ async function handleCompletions (req, apiKey) {
   }
   model = model || DEFAULT_MODEL;
   
-  const isImageGenerationRequest = model.includes("image-generation");
+  const isImageGenerationRequest = model.includes("-image");
   
   let body = await transformRequest(req, model);
 
