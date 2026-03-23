@@ -18,17 +18,26 @@ export default {
         }
       };
       const { pathname } = new URL(request.url);
+
+      console.log(`\n=== [Incoming Request] ===`);
+      console.log(`${request.method} ${request.url}`);
+
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
-          return handleCompletions(await request.json(), apiKey)
+          const chatBody = await request.json();
+          console.log(`Params:`, JSON.stringify(chatBody, null, 2));
+          return handleCompletions(chatBody, apiKey)
             .catch(errHandler);
         case pathname.endsWith("/embeddings"):
           assert(request.method === "POST");
-          return handleEmbeddings(await request.json(), apiKey)
+          const embBody = await request.json();
+          console.log(`Params:`, JSON.stringify(embBody, null, 2));
+          return handleEmbeddings(embBody, apiKey)
             .catch(errHandler);
         case pathname.endsWith("/models"):
           assert(request.method === "GET");
+          console.log(`Params: None (GET request)`);
           return handleModels(apiKey)
             .catch(errHandler);
         default:
@@ -69,15 +78,25 @@ const API_VERSION = "v1beta";
 
 // https://github.com/googleapis/js-genai/blob/main/src/_api_client.ts#L21
 const API_CLIENT = "google-genai-sdk/1.34.0"; // npm view @google/genai version
-const makeHeaders = (apiKey, more) => ({
+const makeHeaders = (more) => ({
   "x-goog-api-client": API_CLIENT,
-  ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
 });
 
 async function handleModels (apiKey) {
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/models`, {
-    headers: makeHeaders(apiKey),
+  let url = `${BASE_URL}/${API_VERSION}/models`;
+  if (apiKey) {
+    url += `?key=${apiKey}`;
+  }
+  // 去掉请求头中的 apiKey
+  const headers = makeHeaders(null);
+
+  console.log(`\n=== [Gemini API Request] ===`);
+  console.log(`GET ${url}`);
+  console.log(`Headers:`, JSON.stringify(headers, null, 2));
+
+  const response = await fetch(url, {
+    headers: headers,
   });
   let { body } = response;
   if (response.ok) {
@@ -115,16 +134,23 @@ async function handleEmbeddings (req, apiKey) {
   if (!Array.isArray(req.input)) {
     req.input = [ req.input ];
   }
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/${modelFull}:batchEmbedContents`, {
+  let url = `${BASE_URL}/${API_VERSION}/${modelFull}:batchEmbedContents`;
+  if (apiKey) {
+    url += `?key=${apiKey}`;
+  }
+  const headers = makeHeaders({ "Content-Type": "application/json" });
+  const reqBody = {
+    "requests": req.input.map(text => ({
+      model: modelFull,
+      content: { parts: { text } },
+      outputDimensionality: req.dimensions,
+    }))
+  };
+
+  const response = await fetch(url, {
     method: "POST",
-    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
-    body: JSON.stringify({
-      "requests": req.input.map(text => ({
-        model: modelFull,
-        content: { parts: { text } },
-        outputDimensionality: req.dimensions,
-      }))
-    })
+    headers: headers,
+    body: JSON.stringify(reqBody)
   });
   let { body } = response;
   if (response.ok) {
@@ -182,9 +208,14 @@ async function handleCompletions (req, apiKey) {
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
   let url = `${BASE_URL}/${API_VERSION}/models/${model}:${TASK}`;
   if (req.stream) { url += "?alt=sse"; }
+  if (apiKey) {
+    url += (url.includes("?") ? "&" : "?") + `key=${apiKey}`;
+  }
+  const headers = makeHeaders({ "Content-Type": "application/json" });
+
   const response = await fetch(url, {
     method: "POST",
-    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+    headers: headers,
     body: JSON.stringify(body),
   });
 
