@@ -7,7 +7,7 @@ export const config = {
   // Available languages and regions for Google AI Studio and Gemini API
   // https://ai.google.dev/gemini-api/docs/available-regions#available_regions
   // Vercel Edge Network Regions
-  // https://vercel.com/docs/edge-network/regions#region-list
+  // https://vercel.com/docs/regions#region-list
   regions: [
     "arn1",
     "bom1",
@@ -15,6 +15,7 @@ export const config = {
     "cle1",
     "cpt1",
     "dub1",
+    "dxb1",
     "fra1",
     "gru1",
     //"hkg1",
@@ -22,6 +23,7 @@ export const config = {
     "iad1",
     "icn1",
     "kix1",
+    "lhr1",
     "pdx1",
     "sfo1",
     "sin1",
