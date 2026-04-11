@@ -749,10 +749,21 @@ function toOpenAiStreamFlush (controller) {
 
 function getEnv(key, env) {
   // Cloudflare Workers
-  if (env && key in env) return env[key]
+  if (env && typeof env === "object" && key in env) return env[key];
 
-  // Vercel Edge / Deno / Bun
-  if (key in globalThis) return (globalThis)[key]
+  // Node / Bun
+  if (typeof process !== "undefined" && process.env?.[key]) {
+    return process.env[key];
+  }
 
-  return undefined
+  // Deno
+  if (typeof Deno !== "undefined" && typeof Deno.env?.get === "function") {
+    const value = Deno.env.get(key);
+    if (value) return value;
+  }
+
+  // Optional explicit global injection
+  if (key in globalThis) return globalThis[key];
+
+  return undefined;
 }
