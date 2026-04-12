@@ -3,7 +3,8 @@
     "@whatwg-node/server": "0.9"
   },
   "devDependencies": {
-    "nodemon": "3"
+    "nodemon": "3",
+    "wrangler": "^4.54.0"
   },
   "scripts": {
     "start": "node node.mjs",
@@ -11,6 +12,7 @@
     "start:deno": "deno --allow-env --allow-net deno.mjs",
     "dev:deno": "deno --watch --allow-env --allow-net deno.mjs",
     "start:bun": "bun bun.mjs",
-    "dev:bun": "bun --watch bun.mjs"
+    "dev:bun": "bun --watch bun.mjs",
+    "dev:wrangler": "wrangler dev"
   }
 }

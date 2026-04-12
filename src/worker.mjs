@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 
 export default {
-  async fetch (request) {
+  async fetch (request, env) {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -11,7 +11,7 @@ export default {
     };
     try {
       const auth = request.headers.get("Authorization");
-      const apiKey = auth?.split(" ")[1];
+      const apiKey = auth?.split(" ")[1] || getEnv("GEMINI_API_KEY", env);
       const assert = (success) => {
         if (!success) {
           throw new HttpError("The specified HTTP method is not allowed for the requested resource", 400);
@@ -70,6 +70,11 @@ const API_VERSION = "v1beta";
 // https://github.com/googleapis/js-genai/blob/main/src/_api_client.ts#L21
 const API_CLIENT = "google-genai-sdk/1.34.0"; // npm view @google/genai version
 const makeHeaders = (apiKey, more) => ({
+const makeHeaders = (apiKey, more) => ({
+  "x-goog-api-client": API_CLIENT,
+  ...(apiKey && { "x-goog-api-key": apiKey }),
+  ...more
+});
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
@@ -743,4 +748,25 @@ function toOpenAiStreamFlush (controller) {
     }
     controller.enqueue("data: [DONE]" + delimiter);
   }
+}
+
+function getEnv(key, env) {
+  // Cloudflare Workers
+  if (env && typeof env === "object" && key in env) return env[key];
+
+  // Node / Bun
+  if (typeof process !== "undefined" && process.env?.[key]) {
+    return process.env[key];
+  }
+
+  // Deno
+  if (typeof Deno !== "undefined" && typeof Deno.env?.get === "function") {
+    const value = Deno.env.get(key);
+    if (value) return value;
+  }
+
+  // Optional explicit global injection
+  if (key in globalThis) return globalThis[key];
+
+  return undefined;
 }
