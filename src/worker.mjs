@@ -70,8 +70,11 @@ const API_VERSION = "v1beta";
 // https://github.com/googleapis/js-genai/blob/main/src/_api_client.ts#L21
 const API_CLIENT = "google-genai-sdk/1.34.0"; // npm view @google/genai version
 const makeHeaders = (apiKey, more) => ({
-  "X-Real-IP": "0.0.0.0",
-  "CF-Connecting-IP": "0.0.0.0",
+const makeHeaders = (apiKey, more) => ({
+  "x-goog-api-client": API_CLIENT,
+  ...(apiKey && { "x-goog-api-key": apiKey }),
+  ...more
+});
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
   ...more
