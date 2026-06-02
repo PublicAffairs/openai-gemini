@@ -1,7 +1,7 @@
 ## Why
 
-The Gemini API is [free](https://ai.google.dev/pricing "limits applied!"),
-but there are many tools that work exclusively with the OpenAI API.
+The Gemini API has [Free](https://ai.google.dev/gemini-api/docs/pricing#free) Tier
+with *generous limits*, but there are still many tools that work exclusively with the OpenAI API.
 
 This project provides a personal OpenAI-compatible endpoint for free.
 
@@ -13,13 +13,12 @@ It can be easily deployed to various providers for free
 (with generous limits suitable for personal use).
 
 > [!TIP]
-> Running the proxy endpoint locally is also an option,
-> though it's more appropriate for development use.
+> Running the proxy endpoint locally is also an [option](#serve-locally---with-node-deno-bun)!
 
 
 ## How to start
 
-You will need a personal Google [API key](https://makersuite.google.com/app/apikey).
+You will need a personal Google [API key](https://aistudio.google.com/app/api-keys).
 
 > [!IMPORTANT]
 > Even if you are located outside of the [supported regions](https://ai.google.dev/gemini-api/docs/available-regions#available_regions),
@@ -49,9 +48,9 @@ which is necessary for continuous integration (CI).
 - Serve locally: `netlify dev`
 - Two different api bases provided:
   - `/v1` (e.g. `/v1/chat/completions` endpoint)  
-    _Functions_ [limits](https://docs.netlify.com/functions/get-started/?fn-language=js#synchronous-function-2)
+    _Functions_ [limits](https://docs.netlify.com/build/functions/get-started/#synchronous-function)
   - `/edge/v1`  
-    _Edge functions_ [limits](https://docs.netlify.com/edge-functions/limits/)
+    _Edge functions_ [limits](https://docs.netlify.com/build/edge-functions/limits/)
 
 
 ### Deploy to Cloudflare
@@ -111,13 +110,13 @@ OPENAI_API_BASE="https://my-super-proxy.vercel.app/v1"
 
 ## Models
 
-Requests use the specified [model] if its name starts with "gemini-", "gemma-", "learnlm-", 
-or "models/". Otherwise, these defaults apply:
+Requests use the specified [model] if its name starts with "gemini-", "gemma-", or "models/".
+Otherwise, these defaults apply:
 
-- `chat/completions`: `gemini-2.5-flash`
-- `embeddings`: `text-embedding-004`
+- `chat/completions`: `gemini-flash-latest`
+- `embeddings`: `gemini-embedding-001`
 
-[model]: https://ai.google.dev/gemini-api/docs/models/gemini
+[model]: https://ai.google.dev/gemini-api/docs/models
 
 
 ## Built-in tools
@@ -133,9 +132,18 @@ Note: The `annotations` message property is not implemented.
 [Vision] and [audio] input supported as per OpenAI [specs].
 Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
 
-[vision]: https://platform.openai.com/docs/guides/vision
-[audio]: https://platform.openai.com/docs/guides/audio?audio-generation-quickstart-example=audio-in
+[vision]: https://platform.openai.com/docs/guides/images-vision?api-mode=chat&format=url#giving-a-model-images-as-input
+[audio]: https://platform.openai.com/docs/guides/audio?example=audio-in&lang=curl#add-audio-to-your-existing-application
 [specs]: https://platform.openai.com/docs/api-reference/chat/create
+
+
+## Gemini-specific functions
+
+There are several features supported by Gemini that are not available in OpenAI models
+but can be enabled using the `extra_body` field.
+The most notable of these is [`thinking_config`](https://ai.google.dev/gemini-api/docs/openai#thinking).
+
+For more details, refer to the [Gemini API docs](https://ai.google.dev/gemini-api/docs/openai#extra-body).
 
 ---
 
@@ -153,7 +161,6 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
           - [x] "user"
           - [x] "assistant"
           - [x] "tool"
-      - [ ] `name`
       - [x] `tool_calls`
   - [x] `model`
   - [x] `frequency_penalty`
@@ -178,9 +185,10 @@ Implemented via [`inlineData`](https://ai.google.dev/api/caching#Part).
   - [x] `tools`
   - [x] `tool_choice`
   - [ ] `parallel_tool_calls` (is always active in Gemini)
-  - [x] [`extra_body`](https://ai.google.dev/gemini-api/docs/openai#extra-body)
+  - [x] [`extra_body`](#gemini-specific-functions)
 
   </details>
 - [ ] `completions`
 - [x] `embeddings`
+  - [x] `dimensions`
 - [x] `models`

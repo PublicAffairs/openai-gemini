@@ -67,8 +67,8 @@ const handleOPTIONS = async () => {
 const BASE_URL = Deno.env.get("BASE_URL") ?? "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 
-// https://github.com/google-gemini/generative-ai-js/blob/cf223ff4a1ee5a2d944c53cddb8976136382bee6/src/requests/request.ts#L71
-const API_CLIENT = "genai-js/0.21.0"; // npm view @google/generative-ai version
+// https://github.com/googleapis/js-genai/blob/main/src/_api_client.ts#L21
+const API_CLIENT = "google-genai-sdk/1.34.0"; // npm view @google/genai version
 const makeHeaders = (apiKey, more) => ({
   "x-goog-api-client": API_CLIENT,
   ...(apiKey && { "x-goog-api-key": apiKey }),
@@ -95,31 +95,34 @@ async function handleModels (apiKey) {
   return new Response(body, fixCors(response));
 }
 
-const DEFAULT_EMBEDDINGS_MODEL = "text-embedding-004";
+const DEFAULT_EMBEDDINGS_MODEL = "gemini-embedding-001";
 async function handleEmbeddings (req, apiKey) {
-  if (typeof req.model !== "string") {
-    throw new HttpError("model is not specified", 400);
+  let modelFull, model;
+  switch (true) {
+    case typeof req.model !== "string":
+      throw new HttpError("model is not specified", 400);
+    case req.model.startsWith("models/"):
+      modelFull = req.model;
+      model = modelFull.substring(7);
+      break;
+    case req.model.startsWith("gemini-"):
+      model = req.model;
+      break;
+    default:
+      model = DEFAULT_EMBEDDINGS_MODEL;
   }
-  let model;
-  if (req.model.startsWith("models/")) {
-    model = req.model;
-  } else {
-    // if (!req.model.startsWith("gemini-")) {
-    //   req.model = DEFAULT_EMBEDDINGS_MODEL;
-    // }
-    model = "models/" + req.model;
-  }
+  modelFull ??= "models/" + model;
   if (!Array.isArray(req.input)) {
     req.input = [ String(req.input) ]; // 确保单个输入也是字符串
   } else {
     req.input = req.input.map(String); // 确保数组中的每个元素都是字符串
   }
-  const response = await fetch(`${BASE_URL}/${API_VERSION}/${model}:batchEmbedContents`, {
+  const response = await fetch(`${BASE_URL}/${API_VERSION}/${modelFull}:batchEmbedContents`, {
     method: "POST",
     headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
     body: JSON.stringify({
       "requests": req.input.map(text => ({
-        model,
+        model: modelFull,
         content: { parts: { text } },
         outputDimensionality: req.dimensions,
       }))
@@ -135,28 +138,30 @@ async function handleEmbeddings (req, apiKey) {
         index,
         embedding: values,
       })),
-      model: req.model,
+      model,
     }, null, "  ");
   }
   return new Response(body, fixCors(response));
 }
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-flash-latest";
 async function handleCompletions (req, apiKey) {
-  let model = DEFAULT_MODEL;
+  let model = req.model;
   switch (true) {
-    case typeof req.model !== "string":
+    case typeof model !== "string":
+      throw new HttpError("model is not specified", 400);
+    case model.startsWith("models/"):
+      model = model.substring(7);
       break;
-    case req.model.startsWith("models/"):
-      model = req.model.substring(7);
+    case model.startsWith("gemini-"):
+    case model.startsWith("gemma-"):
       break;
-    case req.model.startsWith("gemini-"):
-    case req.model.startsWith("gemma-"):
-    case req.model.startsWith("learnlm-"):
-      model = req.model;
+    default:
+      model = DEFAULT_MODEL;
   }
-  let body = await transformRequest(req);
-  const extra = req.extra_body?.google
+  let isV3 = model.startsWith("gemini-3");
+  let body = await transformRequest(req, isV3);
+  const extra = req.extra_body?.google;
   if (extra) {
     if (extra.safety_settings) {
       body.safetySettings = extra.safety_settings;
@@ -170,10 +175,10 @@ async function handleCompletions (req, apiKey) {
   }
   switch (true) {
     case model.endsWith(":search"):
-      model = model.substring(0, model.length - 7);
+      model = model.slice(0,-7);
       // eslint-disable-next-line no-fallthrough
-    case req.model.endsWith("-search-preview"):
-      body.tools = body.tools || [];
+    case req.model?.includes("-search-preview"):
+      body.tools ??= [];
       body.tools.push({googleSearch: {}});
   }
   const TASK = req.stream ? "streamGenerateContent" : "generateContent";
@@ -239,6 +244,7 @@ const adjustProps = (schemaPart) => {
 const adjustSchema = (schema) => {
   const obj = schema[schema.type];
   delete obj.strict;
+  delete obj.parameters?.$schema;
   return adjustProps(schema);
 };
 
@@ -265,12 +271,21 @@ const fieldsMap = {
   top_k: "topK", // non-standard
   top_p: "topP",
 };
+//https://ai.google.dev/gemini-api/docs/openai#thinking
+//https://platform.openai.com/docs/api-reference/chat/create#chat_create-reasoning_effort
 const thinkingBudgetMap = {
+  none: 0,
+  minimal: 1024,
   low: 1024,
   medium: 8192,
   high: 24576,
+  xhigh: 32768, // 2.5 Pro
 };
-const transformConfig = (req) => {
+const thinkingLevelMap = {
+  none: "minimal",
+  xhigh: "high",
+};
+const transformConfig = (req, isV3) => {
   let cfg = {};
   //if (typeof req.stop === "string") { req.stop = [req.stop]; } // no need
   for (let key in req) {
@@ -300,7 +315,10 @@ const transformConfig = (req) => {
     }
   }
   if (req.reasoning_effort) {
-    cfg.thinkingConfig = { thinkingBudget: thinkingBudgetMap[req.reasoning_effort] };
+    cfg.thinkingConfig =
+      isV3
+        ? { thinkingLevel: thinkingLevelMap[req.reasoning_effort] ?? req.reasoning_effort }
+        : { thinkingBudget: thinkingBudgetMap[req.reasoning_effort] };
   }
   return cfg;
 };
@@ -368,7 +386,7 @@ const transformFnResponse = ({ content, tool_call_id }, parts) => {
 
 const transformFnCalls = ({ tool_calls }) => {
   const calls = {};
-  const parts = tool_calls.map(({ function: { arguments: argstr, name }, id, type }, i) => {
+  const parts = tool_calls.map(({ function: { arguments: argstr, name }, id, type, extra_content }, i) => {
     if (type !== "function") {
       throw new HttpError(`Unsupported tool_call type: "${type}"`, 400);
     }
@@ -385,19 +403,21 @@ const transformFnCalls = ({ tool_calls }) => {
         id: id.startsWith("call_") ? null : id,
         name,
         args,
-      }
+      },
+      thoughtSignature: extra_content?.google?.thought_signature,
     };
   });
   parts.calls = calls;
   return parts;
 };
 
-const transformMsg = async ({ content }) => {
+const transformMsg = async ({ content, extra_content }) => {
+  const thoughtSignature = extra_content?.google?.thought_signature;
   const parts = [];
   if (!Array.isArray(content)) {
     // system, user: string
     // assistant: string or null (Required unless tool_calls is specified.)
-    parts.push({ text: content });
+    parts.push({ text: content, thoughtSignature });
     return parts;
   }
   // user:
@@ -422,6 +442,13 @@ const transformMsg = async ({ content }) => {
         break;
       default:
         throw new HttpError(`Unknown "content" item type: "${item.type}"`, 400);
+    }
+  }
+  if (thoughtSignature) {
+    if (parts.length === 1) {
+      parts[0].thoughtSignature = thoughtSignature;
+    } else {
+      parts.push({ text:"", thoughtSignature });
     }
   }
   if (content.every(item => item.type === "image_url")) {
@@ -495,10 +522,10 @@ const transformTools = (req) => {
   return { tools, tool_config };
 };
 
-const transformRequest = async (req) => ({
+const transformRequest = async (req, isV3) => ({
   ...await transformMessages(req.messages),
   safetySettings,
-  generationConfig: transformConfig(req),
+  generationConfig: transformConfig(req,isV3),
   ...transformTools(req),
 });
 
@@ -517,40 +544,83 @@ const reasonsMap = { //https://ai.google.dev/api/rest/v1/GenerateContentResponse
   //"OTHER": "OTHER",
 };
 const SEP = "\n\n|>";
-const transformCandidates = (key, cand) => {
+function transformCandidates (key, cand) {
   const message = { role: "assistant", content: [] };
+  let thought_signature;
   for (const part of cand.content?.parts ?? []) {
     if (part.functionCall) {
       const fc = part.functionCall;
-      message.tool_calls = message.tool_calls ?? [];
+      message.tool_calls ??= [];
+      const thought_signature = fc.thoughtSignature;
       message.tool_calls.push({
         id: fc.id ?? "call_" + generateId(),
         type: "function",
         function: {
           name: fc.name,
           arguments: JSON.stringify(fc.args),
-        }
+        },
+        extra_content: thought_signature ? {google: { thought_signature }} : undefined,
       });
-    } else {
+    } else if (typeof part.text === "string") {
+      const len = message.content.length;
+      if (part.thought !== this.isThinking) {
+        this.isThinking = part.thought;
+        let prefix;
+        if (part.thought) {
+          prefix = "<thought>\n";
+        } else {
+          prefix = "</thought>\n\n";
+          if (len) {
+            message.content[len-1] = message.content[len-1].trimEnd() + "\n";
+          } else {
+            prefix += "\n";
+          }
+        }
+        part.text = prefix + part.text;
+      } else if (len) {
+        message.content[len-1] += SEP;
+      }
       message.content.push(part.text);
+      if (thought_signature && part.thoughtSignature) {
+        throw new Error("Unexpected multiple thoughtSignature");
+      }
+      thought_signature = part.thoughtSignature;
+    } else {
+      throw new Error("Unexpected part type: " + JSON.stringify(part,2));
     }
   }
-  message.content = message.content.join(SEP) || null;
+  message.content = message.content.join("") ?? null;
+  if (thought_signature) {
+    message.extra_content = {google: { thought_signature }};
+  }
   return {
-    index: cand.index || 0, // 0-index is absent in new -002 models response
+    index: cand.index ?? 0, // 0-index is absent in new -002 models response
     [key]: message,
     logprobs: null,
-    finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] || cand.finishReason,
+    finish_reason: message.tool_calls ? "tool_calls" : reasonsMap[cand.finishReason] ?? cand.finishReason,
     //original_finish_reason: cand.finishReason,
   };
-};
-const transformCandidatesMessage = transformCandidates.bind(null, "message");
-const transformCandidatesDelta = transformCandidates.bind(null, "delta");
+}
 
+const notEmpty = (el) => Object.values(el).some(Boolean) ? el : undefined;
+const sum = (...numbers) => numbers.reduce((total, num) => total + (num ?? 0), 0);
 const transformUsage = (data) => ({
-  completion_tokens: data.candidatesTokenCount,
+  completion_tokens: sum(data.candidatesTokenCount, data.toolUsePromptTokenCount, data.thoughtsTokenCount),
   prompt_tokens: data.promptTokenCount,
-  total_tokens: data.totalTokenCount
+  total_tokens: data.totalTokenCount,
+  completion_tokens_details: notEmpty({
+    audio_tokens: data.candidatesTokensDetails
+      ?.find(el => el.modality === "AUDIO")
+      ?.tokenCount,
+    reasoning_tokens: data.thoughtsTokenCount,
+  }),
+  prompt_tokens_details: notEmpty({
+    audio_tokens: data.promptTokensDetails
+      ?.find(el => el.modality === "AUDIO")
+      ?.tokenCount,
+    cached_tokens: data.cacheTokensDetails
+      ?.reduce((acc,el) => acc + el.tokenCount, 0),
+  }),
 });
 
 const checkPromptBlock = (choices, promptFeedback, key) => {
@@ -574,8 +644,8 @@ const checkPromptBlock = (choices, promptFeedback, key) => {
 
 const processCompletionsResponse = (data, model, id) => {
   const obj = {
-    id,
-    choices: data.candidates.map(transformCandidatesMessage),
+    id: data.responseId ?? id,
+    choices: data.candidates.map(transformCandidates.bind({}, "message")),
     created: Math.floor(Date.now()/1000),
     model: data.modelVersion ?? model,
     //system_fingerprint: "fp_69829325d0",
@@ -624,22 +694,31 @@ function toOpenAiStream (line, controller) {
     controller.enqueue(line); // output as is
     return;
   }
-  const obj = {
-    id: this.id,
-    choices: data.candidates.map(transformCandidatesDelta),
-    //created: Math.floor(Date.now()/1000),
-    model: data.modelVersion ?? this.model,
-    //system_fingerprint: "fp_69829325d0",
-    object: "chat.completion.chunk",
-    usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
-  };
+  let obj;
+  try {
+    obj = {
+      id: data.responseId ?? this.id,
+      choices: data.candidates.map(transformCandidates.bind(this, "delta")),
+      //created: Math.floor(Date.now()/1000),
+      model: data.modelVersion ?? this.model,
+      //system_fingerprint: "fp_69829325d0",
+      object: "chat.completion.chunk",
+      usage: data.usageMetadata && this.streamIncludeUsage ? null : undefined,
+    };
+  } catch (err) {
+    console.error(err);
+    controller.enqueue("Unexpected error while handling request: " + err.message);
+    controller.enqueue("\n\n" + line);
+    controller.terminate();
+    return;
+  }
   if (checkPromptBlock(obj.choices, data.promptFeedback, "delta")) {
     controller.enqueue(sseline(obj));
     return;
   }
   console.assert(data.candidates.length === 1, "Unexpected candidates count: %d", data.candidates.length);
   const cand = obj.choices[0];
-  cand.index = cand.index || 0; // absent in new -002 models response
+  cand.index ??= 0; // absent in new -002 models response
   const finish_reason = cand.finish_reason;
   cand.finish_reason = null;
   if (!this.last[cand.index]) { // first
