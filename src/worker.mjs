@@ -31,6 +31,10 @@ export default {
           assert(request.method === "GET");
           return handleModels(apiKey)
             .catch(errHandler);
+        case pathname.endsWith("/audio/speech"):
+          assert(request.method === "POST");
+          return handleSpeech(await request.json(), apiKey)
+            .catch(errHandler);
         default:
           throw new HttpError("404 Not Found", 404);
       }
@@ -140,6 +144,166 @@ async function handleEmbeddings (req, apiKey) {
     }, null, "  ");
   }
   return new Response(body, fixCors(response));
+}
+
+const DEFAULT_SPEECH_MODEL = "gemini-2.5-flash-preview-tts";
+// Map OpenAI voices to Gemini TTS voices
+// OpenAI: alloy, echo, fable, onyx, nova, shimmer
+// Gemini: Puck, Charon, Kore, Fenrir, Aoede, and many more
+const VOICE_MAP = {
+  "alloy": "Puck",      // Neutral, balanced
+  "echo": "Charon",     // Male voice
+  "fable": "Kore",      // Expressive
+  "onyx": "Fenrir",     // Deep, authoritative
+  "nova": "Aoede",      // Warm, friendly
+  "shimmer": "Aoede",   // Similar to nova
+};
+async function handleSpeech (req, apiKey) {
+  // Map OpenAI model names to Gemini TTS models
+  let model;
+  switch (true) {
+    case typeof req.model !== "string":
+      model = DEFAULT_SPEECH_MODEL;
+      break;
+    case req.model.startsWith("models/"):
+      model = req.model.substring(7);
+      break;
+    case req.model.startsWith("gemini-"):
+      model = req.model;
+      break;
+    case req.model === "tts-1":
+      model = DEFAULT_SPEECH_MODEL;
+      break;
+    case req.model === "tts-1-hd":
+      model = "gemini-2.5-pro-preview-tts";
+      break;
+    default:
+      model = DEFAULT_SPEECH_MODEL;
+  }
+  
+  if (!req.input) {
+    throw new HttpError("input is required", 400);
+  }
+  if (!req.voice) {
+    throw new HttpError("voice is required", 400);
+  }
+
+  // Map OpenAI voice to Gemini voice
+  const geminiVoice = VOICE_MAP[req.voice] || "Puck";
+
+  // Build Gemini request
+  const geminiRequest = {
+    contents: [{
+      parts: [{ text: req.input }]
+    }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: geminiVoice
+          }
+        }
+      }
+    }
+  };
+
+  // Call Gemini API
+  const url = `${BASE_URL}/${API_VERSION}/models/${model}:generateContent`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: makeHeaders(apiKey, { "Content-Type": "application/json" }),
+    body: JSON.stringify(geminiRequest),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Gemini API error:", errorText);
+    return new Response(errorText, fixCors(response));
+  }
+
+  const geminiResponse = JSON.parse(await response.text());
+  
+  // Extract audio data from Gemini response
+  if (!geminiResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData) {
+    throw new HttpError("No audio data in response", 500);
+  }
+
+  const audioData = geminiResponse.candidates[0].content.parts[0].inlineData;
+  const audioBytes = Buffer.from(audioData.data, "base64");
+
+  // Convert response format if needed
+  // Gemini returns raw PCM audio data (24 kHz, 16-bit, mono)
+  // Only WAV and PCM formats are currently supported
+  const responseFormat = req.response_format || "wav";
+  let outputBuffer = audioBytes;
+  let mimeType;
+
+  switch (responseFormat) {
+    case "wav":
+      mimeType = "audio/wav";
+      // Convert PCM to WAV format
+      outputBuffer = convertPCMToWAV(audioBytes);
+      break;
+    case "pcm":
+      mimeType = "audio/pcm";
+      // Return raw PCM data
+      break;
+    case "mp3":
+    case "opus":
+    case "aac":
+    case "flac":
+      throw new HttpError(
+        `Format "${responseFormat}" is not supported. Gemini returns raw PCM audio. ` +
+        `Only "wav" and "pcm" formats are supported. ` +
+        `For other formats, use external conversion tools like ffmpeg.`,
+        400
+      );
+    default:
+      throw new HttpError(
+        `Unknown response_format: "${responseFormat}". Supported formats: "wav", "pcm"`,
+        400
+      );
+  }
+
+  return new Response(outputBuffer, {
+    headers: {
+      "Content-Type": mimeType,
+      "Access-Control-Allow-Origin": "*",
+    }
+  });
+}
+
+// Helper function to convert PCM to WAV format
+function convertPCMToWAV(pcmData) {
+  const sampleRate = 24000;
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  
+  const dataSize = pcmData.length;
+  const buffer = Buffer.alloc(44 + dataSize);
+  
+  // RIFF header
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write("WAVE", 8);
+  
+  // fmt chunk
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16); // fmt chunk size
+  buffer.writeUInt16LE(1, 20); // PCM format
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * numChannels * bitsPerSample / 8, 28); // byte rate
+  buffer.writeUInt16LE(numChannels * bitsPerSample / 8, 32); // block align
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  
+  // data chunk
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataSize, 40);
+  pcmData.copy(buffer, 44);
+  
+  return buffer;
 }
 
 const DEFAULT_MODEL = "gemini-flash-latest";

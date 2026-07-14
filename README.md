@@ -122,7 +122,7 @@ Otherwise, these defaults apply:
 ## Built-in tools
 
 To use the **web search** tool, append ":search" to the model name
-(e.g., "gemini-2.5-flash:search").
+(e.g. "gemini-2.5-flash:search").
 
 Note: The `annotations` message property is not implemented.
 
@@ -144,6 +144,53 @@ but can be enabled using the `extra_body` field.
 The most notable of these is [`thinking_config`](https://ai.google.dev/gemini-api/docs/openai#thinking).
 
 For more details, refer to the [Gemini API docs](https://ai.google.dev/gemini-api/docs/openai#extra-body).
+
+
+## Text-to-Speech (TTS)
+
+The `/v1/audio/speech` endpoint exposes an OpenAI-style subset backed by Gemini TTS.
+It is intentionally documented as a subset because the endpoint currently returns only WAV or raw PCM audio and does not implement every OpenAI speech parameter.
+
+### Example usage
+
+```bash
+curl https://your-endpoint.com/v1/audio/speech \
+  -H "Authorization: Bearer $GEMINI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "tts-1",
+    "input": "Hello! This is a test of the text-to-speech API.",
+    "voice": "alloy",
+    "response_format": "wav"
+  }' \
+  --output speech.wav
+```
+
+### Model mapping
+
+- `tts-1` → `gemini-2.5-flash-preview-tts`
+- `tts-1-hd` → `gemini-2.5-pro-preview-tts`
+- Gemini model names can be passed directly, with or without the `models/` prefix (for example, `gemini-3.1-flash-tts-preview`).
+
+### Voice mapping
+
+OpenAI voice names are mapped to Gemini prebuilt voices:
+
+- `alloy` → Puck (upbeat)
+- `echo` → Charon (informative)
+- `fable` → Kore (firm)
+- `onyx` → Fenrir (excitable)
+- `nova` → Aoede (breezy)
+- `shimmer` → Aoede (breezy)
+
+### Compatibility notes
+
+- `input` and `voice` are required.
+- `response_format` supports `wav` and `pcm`; the default is `wav`.
+- Gemini returns 24 kHz, 16-bit, mono PCM. WAV responses add a standard RIFF/WAVE header around that PCM payload.
+- `mp3`, `opus`, `aac`, and `flac` are rejected. Convert WAV/PCM externally when one of those formats is required.
+- `speed`, `instructions`, and `stream_format` are not implemented. Omit them when using this endpoint.
+- The response is buffered rather than streamed.
 
 ---
 
@@ -192,3 +239,22 @@ For more details, refer to the [Gemini API docs](https://ai.google.dev/gemini-ap
 - [x] `embeddings`
   - [x] `dimensions`
 - [x] `models`
+- [x] `audio/speech` (Text-to-Speech subset)
+  <details>
+
+  - [x] `model`
+    - `tts-1` => `gemini-2.5-flash-preview-tts`
+    - `tts-1-hd` => `gemini-2.5-pro-preview-tts`
+    - Gemini TTS model names can also be specified directly.
+  - [x] `input` (required)
+  - [x] `voice` (required)
+    - Supported aliases: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`
+    - Mapped Gemini voices: Puck, Charon, Kore, Fenrir, Aoede
+  - [x] `response_format`
+    - Supported: `wav`, `pcm`
+    - Default: `wav`
+  - [ ] `speed`
+  - [ ] `instructions`
+  - [ ] `stream_format`
+
+  </details>
