@@ -368,9 +368,9 @@ const transformFnResponse = ({ content, tool_call_id }, parts) => {
   let response;
   try {
     response = JSON.parse(content);
-  } catch (err) {
-    console.error("Error parsing function response content:", err);
-    throw new HttpError("Invalid function response: " + content, 400);
+  } catch {
+    // OpenAI-compatible clients may return tool output as plain text.
+    response = { result: content };
   }
   if (typeof response !== "object" || response === null || Array.isArray(response)) {
     response = { result: response };
