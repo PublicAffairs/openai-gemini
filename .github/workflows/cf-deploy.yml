@@ -2,7 +2,7 @@ name: Deploy Worker
 on:
   push:
     branches:
-      - qzl
+      - main
   pull_request:
   repository_dispatch:
 jobs:
