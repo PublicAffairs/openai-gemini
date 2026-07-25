@@ -226,6 +226,11 @@ async function handleCompletions (req, apiKey) {
   return new Response(body, fixCors(response));
 }
 
+const unsupportedGeminiSchemaKeys = new Set([
+  "$comment",
+  "$schema",
+  "enumDescriptions",
+]);
 const adjustProps = (schemaPart) => {
   if (typeof schemaPart !== "object" || schemaPart === null) {
     return;
@@ -233,16 +238,23 @@ const adjustProps = (schemaPart) => {
   if (Array.isArray(schemaPart)) {
     schemaPart.forEach(adjustProps);
   } else {
+    unsupportedGeminiSchemaKeys.forEach(key => delete schemaPart[key]);
     if (schemaPart.type === "object" && schemaPart.properties && schemaPart.additionalProperties === false) {
       delete schemaPart.additionalProperties;
     }
-    Object.values(schemaPart).forEach(adjustProps);
+    Object.entries(schemaPart).forEach(([key, value]) => {
+      // Property names are user-defined and must not be treated as schema keywords.
+      if (key === "properties" && value && typeof value === "object" && !Array.isArray(value)) {
+        Object.values(value).forEach(adjustProps);
+      } else {
+        adjustProps(value);
+      }
+    });
   }
 };
 const adjustSchema = (schema) => {
   const obj = schema[schema.type];
   delete obj.strict;
-  delete obj.parameters?.$schema;
   return adjustProps(schema);
 };
 
