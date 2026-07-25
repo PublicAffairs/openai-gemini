@@ -2,3 +2,11 @@ name = "gemini"
 main = "src/worker.mjs"
 compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
+
+[[durable_objects.bindings]]
+name = "SIGNATURE_STORE"
+class_name = "SignatureStore"
+
+[exports.SignatureStore]
+type = "durable-object"
+storage = "sqlite"

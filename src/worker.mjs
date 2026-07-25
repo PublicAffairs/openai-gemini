@@ -1,7 +1,81 @@
 import { Buffer } from "node:buffer";
 
+const SIGNATURE_TTL_MS = 10 * 60 * 1000;
+
+export class SignatureStore {
+  constructor(ctx) {
+    this.ctx = ctx;
+  }
+
+  async fetch(request) {
+    switch (request.method) {
+      case "PUT": {
+        const signature = await request.text();
+        if (!signature) {
+          return new Response("Signature is required", { status: 400 });
+        }
+        await this.ctx.storage.put("signature", signature);
+        await this.ctx.storage.setAlarm(Date.now() + SIGNATURE_TTL_MS);
+        return new Response(null, { status: 204 });
+      }
+      case "GET": {
+        const signature = await this.ctx.storage.get("signature");
+        return signature
+          ? new Response(signature)
+          : new Response(null, { status: 404 });
+      }
+      default:
+        return new Response(null, { status: 405 });
+    }
+  }
+
+  async alarm() {
+    await this.ctx.storage.deleteAll();
+  }
+}
+
+const getSignatureStub = (env, apiKey, toolCallId) => {
+  if (!env?.SIGNATURE_STORE || !toolCallId) {
+    return;
+  }
+  const objectName = JSON.stringify([apiKey ?? "", toolCallId]);
+  const objectId = env.SIGNATURE_STORE.idFromName(objectName);
+  return env.SIGNATURE_STORE.get(objectId);
+};
+
+const saveThoughtSignature = async (context, toolCallId, signature) => {
+  const stub = getSignatureStub(context?.env, context?.apiKey, toolCallId);
+  if (!stub || !signature) {
+    return;
+  }
+  try {
+    const response = await stub.fetch("https://signature-store.internal", {
+      method: "PUT",
+      body: signature,
+    });
+    if (!response.ok) {
+      console.error("Unable to persist thought signature:", response.status);
+    }
+  } catch (err) {
+    console.error("Unable to persist thought signature:", err);
+  }
+};
+
+const loadThoughtSignature = async (context, toolCallId) => {
+  const stub = getSignatureStub(context?.env, context?.apiKey, toolCallId);
+  if (!stub) {
+    return;
+  }
+  try {
+    const response = await stub.fetch("https://signature-store.internal");
+    return response.ok ? await response.text() : undefined;
+  } catch (err) {
+    console.error("Unable to load thought signature:", err);
+  }
+};
+
 export default {
-  async fetch (request) {
+  async fetch (request, env) {
     if (request.method === "OPTIONS") {
       return handleOPTIONS();
     }
@@ -21,7 +95,7 @@ export default {
       switch (true) {
         case pathname.endsWith("/chat/completions"):
           assert(request.method === "POST");
-          return handleCompletions(await request.json(), apiKey)
+          return handleCompletions(await request.json(), apiKey, env)
             .catch(errHandler);
         case pathname.endsWith("/embeddings"):
           assert(request.method === "POST");
@@ -186,7 +260,7 @@ async function handleEmbeddings (req, apiKey) {
 }
 
 const DEFAULT_MODEL = "gemini-flash-latest";
-async function handleCompletions (req, apiKey) {
+async function handleCompletions (req, apiKey, env) {
   let model = req.model;
   switch (true) {
     case typeof model !== "string":
@@ -201,7 +275,12 @@ async function handleCompletions (req, apiKey) {
       model = DEFAULT_MODEL;
   }
   let isV3 = model.startsWith("gemini-3");
-  let body = await transformRequest(req, isV3);
+  const context = {
+    apiKey,
+    env,
+    hadToolResponse: req.messages?.at(-1)?.role === "tool",
+  };
+  let body = await transformRequest(req, isV3, context);
   const extra = req.extra_body?.google;
   if (extra) {
     if (extra.safety_settings) {
@@ -251,6 +330,7 @@ async function handleCompletions (req, apiKey) {
         flush: toOpenAiStreamFlush,
         streamIncludeUsage: req.stream_options?.include_usage,
         model, id, last: [],
+        context,
         shared,
       }))
       .pipeThrough(new TextEncoderStream());
@@ -265,7 +345,7 @@ async function handleCompletions (req, apiKey) {
       console.error("Error parsing response:", err);
       return openAiErrorResponse(new HttpError("Invalid response from Gemini", 502));
     }
-    body = processCompletionsResponse(body, model, id);
+    body = await processCompletionsResponse(body, model, id, context);
   }
   return new Response(body, fixCors(response));
 }
@@ -442,12 +522,12 @@ const transformFnResponse = ({ content, tool_call_id }, parts) => {
 };
 
 const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
-const transformFnCalls = ({ tool_calls }) => {
+const transformFnCalls = async ({ tool_calls }, context) => {
   if (!Array.isArray(tool_calls) || tool_calls.length === 0) {
     throw new HttpError("tool_calls must be a non-empty array", 400);
   }
   const calls = {};
-  const parts = tool_calls.map((toolCall, i) => {
+  const parts = await Promise.all(tool_calls.map(async (toolCall, i) => {
     const { id, type, extra_content: callExtraContent } = toolCall;
     const name = toolCall.function?.name;
     const argstr = toolCall.function?.arguments;
@@ -476,7 +556,9 @@ const transformFnCalls = ({ tool_calls }) => {
     calls[id] = {i, name};
     const thoughtSignature =
       callExtraContent?.google?.thought_signature
-      ?? (i === 0 ? SKIP_THOUGHT_SIGNATURE : undefined);
+      ?? (i === 0
+        ? await loadThoughtSignature(context, id) ?? SKIP_THOUGHT_SIGNATURE
+        : undefined);
     return {
       functionCall: {
         id: id.startsWith("call_") ? null : id,
@@ -485,7 +567,7 @@ const transformFnCalls = ({ tool_calls }) => {
       },
       thoughtSignature,
     };
-  });
+  }));
   parts.calls = calls;
   return parts;
 };
@@ -539,7 +621,7 @@ const transformMsg = async ({ content, extra_content }) => {
   return parts;
 };
 
-const transformMessages = async (messages) => {
+const transformMessages = async (messages, context) => {
   if (!messages) { return; }
   const contents = [];
   let system_instruction;
@@ -555,10 +637,11 @@ const transformMessages = async (messages) => {
       case "tool":
         // eslint-disable-next-line no-case-declarations
         let previous = contents[contents.length - 1] ?? {};
-        if (previous.role !== "function") {
+        if (!previous.parts?.isFunctionResponses) {
           const calls = previous.parts?.calls;
-          previous = { role: "function", parts: [] };
+          previous = { role: "user", parts: [] };
           previous.parts.calls = calls;
+          previous.parts.isFunctionResponses = true;
           contents.push(previous);
         }
         transformFnResponse(item, previous.parts);
@@ -567,7 +650,7 @@ const transformMessages = async (messages) => {
         role = "model";
         parts = await transformMsg(item);
         if (item.tool_calls) {
-          const callParts = transformFnCalls(item);
+          const callParts = await transformFnCalls(item, context);
           parts.push(...callParts);
           parts.calls = callParts.calls;
         }
@@ -635,8 +718,8 @@ const transformTools = (req) => {
   return { tools, tool_config };
 };
 
-const transformRequest = async (req, isV3) => ({
-  ...await transformMessages(req.messages),
+const transformRequest = async (req, isV3, context) => ({
+  ...await transformMessages(req.messages, context),
   safetySettings,
   generationConfig: transformConfig(req,isV3),
   ...transformTools(req),
@@ -665,7 +748,7 @@ const functionCallErrorReasons = new Set([
   "UNEXPECTED_TOOL_CALL",
 ]);
 const SEP = "\n\n|>";
-function transformCandidates (key, cand) {
+async function transformCandidates (key, cand, context) {
   if (functionCallErrorReasons.has(cand.finishReason)) {
     throw new HttpError(`Gemini failed to generate a valid tool call: ${cand.finishReason}`, 502);
   }
@@ -675,8 +758,10 @@ function transformCandidates (key, cand) {
     if (part.functionCall) {
       const fc = part.functionCall;
       message.tool_calls ??= [];
+      const toolCallId = fc.id ?? "call_" + generateId();
+      await saveThoughtSignature(context, toolCallId, part.thoughtSignature);
       const toolCall = {
-        id: fc.id ?? "call_" + generateId(),
+        id: toolCallId,
         type: "function",
         function: {
           name: fc.name,
@@ -722,7 +807,24 @@ function transformCandidates (key, cand) {
       throw new Error("Unexpected part type: " + JSON.stringify(part,2));
     }
   }
-  const content = message.content.join("");
+  let content = message.content.join("");
+  const candidateIndex = cand.index ?? 0;
+  if (key === "delta") {
+    this.visibleOutput ??= new Map();
+  }
+  const hadVisibleOutput = key === "delta" && this.visibleOutput.get(candidateIndex);
+  if (
+    !content
+    && !message.tool_calls
+    && cand.finishReason === "STOP"
+    && context?.hadToolResponse
+    && !hadVisibleOutput
+  ) {
+    content = "Tool execution finished.";
+  }
+  if (key === "delta" && (content || message.tool_calls)) {
+    this.visibleOutput.set(candidateIndex, true);
+  }
   if (key === "message") {
     message.content = content || (message.tool_calls ? null : "");
   } else if (content) {
@@ -785,10 +887,12 @@ const checkPromptBlock = (choices, promptFeedback, key) => {
   return true;
 };
 
-const processCompletionsResponse = (data, model, id) => {
+const processCompletionsResponse = async (data, model, id, context) => {
   const obj = {
     id: data.responseId ?? id,
-    choices: data.candidates.map(transformCandidates.bind({}, "message")),
+    choices: await Promise.all(
+      data.candidates.map(cand => transformCandidates.call({}, "message", cand, context)),
+    ),
     created: Math.floor(Date.now()/1000),
     model: data.modelVersion ?? model,
     //system_fingerprint: "fp_69829325d0",
@@ -824,7 +928,7 @@ const sseline = (obj) => {
   obj.created = Math.floor(Date.now()/1000);
   return "data: " + JSON.stringify(obj) + delimiter;
 };
-function toOpenAiStream (line, controller) {
+async function toOpenAiStream (line, controller) {
   let data;
   try {
     data = JSON.parse(line);
@@ -845,7 +949,9 @@ function toOpenAiStream (line, controller) {
   try {
     obj = {
       id: data.responseId ?? this.id,
-      choices: data.candidates.map(transformCandidates.bind(this, "delta")),
+      choices: await Promise.all(
+        data.candidates.map(cand => transformCandidates.call(this, "delta", cand, this.context)),
+      ),
       //created: Math.floor(Date.now()/1000),
       model: data.modelVersion ?? this.model,
       //system_fingerprint: "fp_69829325d0",

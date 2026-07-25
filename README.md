@@ -154,10 +154,15 @@ including streamed and parallel `tool_calls`, plain-text tool results, and
 Gemini 3 requires a thought signature when a function call is sent back with
 its result. The proxy preserves a real signature through
 `extra_content.google.thought_signature` when the client supports that field.
-For strict OpenAI clients that discard provider-specific fields, it uses
-Google's documented `skip_thought_signature_validator` fallback on the first
-function call in each step. This keeps the Worker stateless while allowing
-clients such as VS Code Agent mode to complete the tool loop.
+The Cloudflare deployment also stores signatures for ten minutes in a
+SQLite-backed Durable Object, keyed by API key and `tool_call_id`. This allows
+strict OpenAI clients such as VS Code Agent mode to recover the real signature
+even when they discard provider-specific fields. If storage is unavailable or
+the entry has expired, the proxy uses Google's documented
+`skip_thought_signature_validator` fallback on the first function call.
+
+Other deployment targets continue to work without Cloudflare bindings and use
+the client-provided signature or the documented fallback.
 
 This compatibility applies to the OpenAI Chat Completions API. The newer
 OpenAI Responses API (`/v1/responses`) is not implemented.

@@ -1,9 +1,55 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
-import worker from "../src/worker.mjs";
+import worker, { SignatureStore } from "../src/worker.mjs";
 
 const originalFetch = globalThis.fetch;
+
+class MemoryStorage {
+  constructor() {
+    this.values = new Map();
+  }
+
+  async put(key, value) {
+    this.values.set(key, value);
+  }
+
+  async get(key) {
+    return this.values.get(key);
+  }
+
+  async setAlarm(timestamp) {
+    this.alarm = timestamp;
+  }
+
+  async deleteAll() {
+    this.values.clear();
+  }
+}
+
+class MemorySignatureNamespace {
+  constructor() {
+    this.objects = new Map();
+  }
+
+  idFromName(name) {
+    return name;
+  }
+
+  get(id) {
+    if (!this.objects.has(id)) {
+      const storage = new MemoryStorage();
+      this.objects.set(id, {
+        instance: new SignatureStore({ storage }),
+        storage,
+      });
+    }
+    const object = this.objects.get(id);
+    return {
+      fetch: (input, init) => object.instance.fetch(new Request(input, init)),
+    };
+  }
+}
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -105,6 +151,55 @@ test("returns Gemini thought signatures on OpenAI tool calls", async () => {
   assert.equal(completion.choices[0].finish_reason, "tool_calls");
 });
 
+test("persists and restores real signatures through Durable Objects", async () => {
+  const namespace = new MemorySignatureNamespace();
+  const env = { SIGNATURE_STORE: namespace };
+  mockGemini(geminiResponse([{
+    functionCall: { name: "write_file", args: { path: "test.md" } },
+    thoughtSignature: "persisted-signature",
+  }]));
+
+  const firstResponse = await worker.fetch(request({
+    messages: [{ role: "user", content: "create a file" }],
+  }), env);
+  const firstCompletion = await firstResponse.json();
+  const toolCall = firstCompletion.choices[0].message.tool_calls[0];
+  assert.equal(namespace.objects.size, 1);
+  const storedObject = namespace.objects.values().next().value;
+  assert.ok(storedObject.storage.alarm > Date.now());
+
+  const captured = mockGemini(geminiResponse([{ text: "done" }]));
+  await worker.fetch(request({
+    messages: [
+      { role: "user", content: "create a file" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: toolCall.id,
+          type: "function",
+          function: toolCall.function,
+        }],
+      },
+      {
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: "The file was created.",
+      },
+    ],
+  }), env);
+
+  const outbound = captured();
+  assert.equal(
+    outbound.contents[1].parts[0].thoughtSignature,
+    "persisted-signature",
+  );
+  assert.equal(outbound.contents[2].role, "user");
+
+  await storedObject.instance.alarm();
+  assert.equal(await storedObject.storage.get("signature"), undefined);
+});
+
 test("replays tool calls with fallback signatures and plain-text results", async () => {
   const captured = mockGemini(geminiResponse([{ text: "done" }]));
   const response = await worker.fetch(request({
@@ -140,6 +235,7 @@ test("replays tool calls with fallback signatures and plain-text results", async
     outbound.contents[2].parts[0].functionResponse.response,
     { result: "The file was successfully created." },
   );
+  assert.equal(outbound.contents[2].role, "user");
 });
 
 test("prefers a real signature and signs only the first parallel fallback call", async () => {
@@ -316,6 +412,37 @@ test("returns OpenAI-shaped JSON for local and upstream errors", async () => {
   assert.equal(upstreamError.error.message, "Quota exceeded");
   assert.equal(upstreamError.error.code, 429);
   assert.equal(upstreamError.error.type, "rate_limit_error");
+});
+
+test("provides a final acknowledgement for an empty post-tool response", async () => {
+  const messages = [
+    { role: "user", content: "edit the file" },
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [{
+        id: "call_1",
+        type: "function",
+        function: { name: "edit_file", arguments: "{}" },
+      }],
+    },
+    { role: "tool", tool_call_id: "call_1", content: "Edit completed." },
+  ];
+
+  const emptyCompletion = geminiResponse([]);
+  mockGemini(emptyCompletion);
+  const jsonResponse = await worker.fetch(request({ messages }));
+  const completion = await jsonResponse.json();
+  assert.equal(
+    completion.choices[0].message.content,
+    "Tool execution finished.",
+  );
+
+  mockGemini(`data: ${JSON.stringify(emptyCompletion)}\n\n`, {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+  const streamResponse = await worker.fetch(request({ stream: true, messages }));
+  assert.match(await streamResponse.text(), /Tool execution finished\./);
 });
 
 test("surfaces malformed Gemini tool calls in JSON and streaming responses", async () => {
