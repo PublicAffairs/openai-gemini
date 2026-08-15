@@ -1,10 +1,13 @@
 name: Deploy Worker
 on:
   push:
-    branches:
-      - main
-  pull_request:
-  repository_dispatch:
+  #   branches:
+  #     - main
+  # pull_request:
+  # repository_dispatch:
+  branches:
+      - qzl
+  workflow_dispatch:
 jobs:
   deploy:
     runs-on: ubuntu-latest
