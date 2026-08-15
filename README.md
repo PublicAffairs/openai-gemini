@@ -145,6 +145,28 @@ The most notable of these is [`thinking_config`](https://ai.google.dev/gemini-ap
 
 For more details, refer to the [Gemini API docs](https://ai.google.dev/gemini-api/docs/openai#extra-body).
 
+### Agent and tool-calling compatibility
+
+The `chat/completions` endpoint supports multi-step OpenAI-style tool calling,
+including streamed and parallel `tool_calls`, plain-text tool results, and
+`tool_choice: "required"`.
+
+Gemini 3 requires a thought signature when a function call is sent back with
+its result. The proxy preserves a real signature through
+`extra_content.google.thought_signature` when the client supports that field.
+The Cloudflare deployment also stores signatures for ten minutes in a
+SQLite-backed Durable Object, keyed by API key and `tool_call_id`. This allows
+strict OpenAI clients such as VS Code Agent mode to recover the real signature
+even when they discard provider-specific fields. If storage is unavailable or
+the entry has expired, the proxy uses Google's documented
+`skip_thought_signature_validator` fallback on the first function call.
+
+Other deployment targets continue to work without Cloudflare bindings and use
+the client-provided signature or the documented fallback.
+
+This compatibility applies to the OpenAI Chat Completions API. The newer
+OpenAI Responses API (`/v1/responses`) is not implemented.
+
 ---
 
 ## Supported API endpoints and applicable parameters
@@ -158,6 +180,7 @@ For more details, refer to the [Gemini API docs](https://ai.google.dev/gemini-ap
       - [x] `content`
       - [x] `role`
           - [x] "system" (=>`system_instruction`)
+          - [x] "developer" (=>`system_instruction`)
           - [x] "user"
           - [x] "assistant"
           - [x] "tool"
