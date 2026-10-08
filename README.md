@@ -64,6 +64,15 @@ which is necessary for continuous integration (CI).
 - _Worker_ [limits](https://developers.cloudflare.com/workers/platform/limits/#worker-limits)
 
 
+### Deploy to ZopDay
+
+[![Deploy to ZopDay](https://zop.dev/deploytozopday-inkhard.svg)](https://zop.dev/zopday/app/deploy?repo=https://github.com/PublicAffairs/openai-gemini&port=8080)
+- Builds this repository and runs `npm start` (`node.mjs`) on port 8080
+- Runs as a long-lived container, on ZopCloud or in your own AWS, GCP or Azure account,
+  so request duration is bounded by the container rather than by a function runtime
+- Serve locally: `npm run start`
+
+
 ### Deploy to Deno
 
 See details [here](https://github.com/PublicAffairs/openai-gemini/discussions/19).
